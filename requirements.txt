@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+lxml
+feedparser
+rapidfuzz
+python-dateutil
+pyyaml
+python-dotenv
+geopy
+anthropic

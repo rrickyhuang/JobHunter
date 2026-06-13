@@ -1,0 +1,42 @@
+# ── Secrets & personal config (never commit) ──
+# NOTE: gitignore does NOT support inline comments — keep patterns on bare lines.
+.env
+# real config; the committed template is config.example.yaml
+config.yaml
+# in case the profile is ever split into its own file
+profile.yaml
+
+# ── Claude Code local settings (machine-specific) ──
+.claude/settings.local.json
+
+# ── Local data & generated output ──
+*.db
+*.sqlite
+*.sqlite3
+digests/
+.geocode_cache.json
+*.geocode_cache.json
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# ── Editor / OS cruft ──
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Personal documents that may sit alongside the project ──
+# (resume / portfolio / cover letters — keep these out of a public repo)
+*.pdf
+*Resume*
+*Portfolio*
+cover_letters/

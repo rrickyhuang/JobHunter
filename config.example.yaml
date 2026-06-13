@@ -1,0 +1,118 @@
+# Job Hunter — configuration template.
+# Copy this file to `config.yaml` and tune it to your own search.
+# `config.yaml` is gitignored so your personal preferences never get committed.
+
+# ── Search seeding ───────────────────────────────────────────────────────────
+search_queries:
+  keywords:
+    - "urban designer"
+    - "landscape architect"
+    - "public realm"
+    - "project designer"
+    - "planning associate"
+    - "streetscape"
+    - "open space"
+  location: "Your City, Province"
+  location_radius_km: 40
+  exclude_keywords:
+    - "interior design"
+    - "graphic design"
+    - "game designer"
+    - "instructional designer"
+    - "web designer"
+
+# ── Home / commute reference ─────────────────────────────────────────────────
+# Commute is scored as estimated transit time from your home station to a job,
+# using only free geocoding (Nominatim) + the station list in transit_data.py.
+commute:
+  home_station: "Your Home Station"
+  acceptable_lines: ["Line A", "Line B"]   # transit lines whose stations count
+  walk_speed_kmh: 4.8
+  minutes_per_station: 2.2
+  interchange_penalty_min: 4
+  score_buckets:                            # estimated one-way minutes -> score
+    - { max_min: 20,  score: 1.0 }
+    - { max_min: 35,  score: 0.85 }
+    - { max_min: 50,  score: 0.6 }
+    - { max_min: 70,  score: 0.35 }
+    - { max_min: 9999, score: 0.15 }
+  remote_score: 0.9
+  unknown_location_score: 0.55
+
+# ── Scoring ──────────────────────────────────────────────────────────────────
+scoring:
+  weights:
+    commute:          0.28
+    role_type:        0.18
+    design_autonomy:  0.18
+    mixed_role:       0.16
+    salary:           0.12
+    role_quality:     0.08
+  preferences:
+    salary_floor:     60000   # soft penalty below this, not a hard disqualifier
+    salary_target:    85000   # at/above this gets full salary score
+    remote_ok:        true
+    hybrid_ok:        true
+  target_roles:
+    - "urban_design"
+    - "landscape_arch"
+    - "planning"
+    - "civic_innovation"
+  target_firms: []            # company names that earn a bonus
+  target_firm_bonus: 0.10
+  skills_bonus:
+    terms:
+      - "power bi"
+      - "excel"
+      - "workflow"
+      - "process"
+    per_hit: 0.02
+    cap: 0.08
+
+# ── Hard disqualifiers (force score to 0) ────────────────────────────────────
+disqualifiers:
+  role_types: ["admin", "drafting_only"]
+  kill_if_admin_heavy: true
+  kill_if_outside_metro_and_onsite: true
+
+# ── Candidate profile (feeds the LLM enrichment prompt) ──────────────────────
+# Describe yourself here so the LLM can judge whether a posting actually fits.
+profile:
+  summary: >
+    A short description of who you are and what kind of role you want.
+  wants:
+    - "The kinds of work and environments you want"
+  avoids:
+    - "The kinds of roles you want to filter out"
+  design_software:
+    - "Tools you know"
+  differentiator: >
+    Anything that sets you apart from other candidates.
+
+# ── Enrichment ───────────────────────────────────────────────────────────────
+enrichment:
+  model: "claude-haiku-4-5"
+  max_description_chars: 3000
+  enabled: true
+
+# ── Delivery ─────────────────────────────────────────────────────────────────
+delivery:
+  write_markdown: true
+  digest_dir: "digests"
+  send_email: true
+  min_score_for_digest: 0.45
+  max_jobs_in_digest: 25
+
+# ── Sources to run ───────────────────────────────────────────────────────────
+sources:
+  indeed: true
+  archinect: true
+  pibc: true
+  csla: true
+  idealist: true
+  dezeen: true
+  firm_direct: true
+
+# Direct firm careers pages to scrape, e.g.:
+#   - { name: "Some Studio", careers_url: "https://example.com/careers" }
+target_firms_scrape: []

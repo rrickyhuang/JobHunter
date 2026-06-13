@@ -1,0 +1,86 @@
+"""Core data model for a job posting.
+
+Adapted from the original spec for Ricky's search: org-type penalties are gone,
+and commute-from-Commercial-Broadway fields are added as a first-class concern.
+"""
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+
+
+@dataclass
+class Job:
+    # ── Identity ─────────────────────────────────────────────────────────────
+    source: str                      # "indeed" | "archinect" | "pibc" | ...
+    external_id: str                 # source's own id, or a hash of the url
+    url: str
+    id: str = ""                     # our stable id; derived in __post_init__
+
+    # ── Core ─────────────────────────────────────────────────────────────────
+    title: str = ""
+    company: str = ""
+    location: str = ""               # raw location string from the posting
+    location_normalized: str = "Unknown"  # Vancouver | Remote | Hybrid | Other | Unknown
+
+    # ── Commute (from Commercial-Broadway, Expo/Millennium lines) ────────────
+    location_lat: float | None = None
+    location_lng: float | None = None
+    nearest_station: str | None = None
+    commute_min: int | None = None   # estimated one-way door-to-door minutes
+    is_remote: bool | None = None
+
+    # ── Compensation (CAD) ───────────────────────────────────────────────────
+    salary_min: int | None = None
+    salary_max: int | None = None
+    salary_raw: str | None = None
+
+    # ── Role classification ──────────────────────────────────────────────────
+    role_type: str | None = None
+    # urban_design | landscape_arch | planning | civic_innovation
+    # | architecture | admin | pm_only | drafting_only | unknown
+
+    # ── Org classification (informational only — no scoring penalty) ─────────
+    org_type: str | None = None
+    org_size: str | None = None      # small | mid | large | unknown
+
+    # ── Role quality signals (LLM-enriched) ──────────────────────────────────
+    has_design_autonomy: bool | None = None
+    has_mixed_role: bool | None = None
+    has_variety: bool | None = None
+    is_admin_heavy: bool | None = None
+    is_drafting_only: bool | None = None
+    is_hierarchical: bool | None = None
+    skills_leverage: list[str] = field(default_factory=list)
+    autonomy_evidence: str | None = None
+    fit_summary: str | None = None
+
+    # ── Meta ─────────────────────────────────────────────────────────────────
+    posted_at: datetime | None = None
+    scraped_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    description: str = ""
+
+    # ── Computed ─────────────────────────────────────────────────────────────
+    score: float = 0.0
+    score_breakdown: dict = field(default_factory=dict)
+    disqualifier: str | None = None
+
+    # ── User/workflow state ──────────────────────────────────────────────────
+    enriched: bool = False
+    is_new: bool = True
+    seen: bool = False
+    saved: bool = False
+    dismissed: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = self.make_id(self.source, self.external_id)
+
+    @staticmethod
+    def make_id(source: str, external_id: str) -> str:
+        return hashlib.sha1(f"{source}:{external_id}".encode("utf-8")).hexdigest()[:16]
+
+    def to_row(self) -> dict:
+        """Flatten to a dict of SQLite-storable scalars (handled by db.py)."""
+        return asdict(self)
