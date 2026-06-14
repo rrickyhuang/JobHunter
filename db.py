@@ -19,7 +19,8 @@ from models import Job
 DB_PATH = Path(__file__).with_name("jobs.db")
 
 # Fields that need JSON or ISO encoding rather than raw scalar storage.
-_JSON_FIELDS = {"skills_leverage", "score_breakdown"}
+_JSON_FIELDS = {"skills_leverage", "score_breakdown",
+                "required_credentials", "missing_requirements"}
 _DATETIME_FIELDS = {"posted_at", "scraped_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
@@ -57,6 +58,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     skills_leverage     TEXT,
     autonomy_evidence   TEXT,
     fit_summary         TEXT,
+    seniority           TEXT,
+    required_years      INTEGER,
+    required_credentials TEXT,
+    qualification       TEXT,
+    missing_requirements TEXT,
     posted_at           TEXT,
     scraped_at          TEXT,
     description         TEXT,
@@ -84,6 +90,22 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
+    conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add any columns missing from an older jobs.db (CREATE IF NOT EXISTS won't
+    alter an existing table). Keeps existing data intact."""
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+    added = {
+        "seniority": "TEXT", "required_years": "INTEGER",
+        "required_credentials": "TEXT", "qualification": "TEXT",
+        "missing_requirements": "TEXT",
+    }
+    for col, typ in added.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
     conn.commit()
 
 

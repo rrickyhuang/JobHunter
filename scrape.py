@@ -16,7 +16,15 @@ import config
 import db
 import commute
 import scorer
+import enrichment
 from models import Job
+
+_ENRICH_FIELDS = (
+    "has_design_autonomy", "has_mixed_role", "has_variety", "is_admin_heavy",
+    "is_drafting_only", "is_hierarchical", "skills_leverage", "autonomy_evidence",
+    "fit_summary", "seniority", "required_years", "required_credentials",
+    "qualification", "missing_requirements",
+)
 from parsers.salary_cad import parse_salary
 from parsers.role_classifier import classify_role
 from parsers.org_classifier import classify_org
@@ -76,10 +84,54 @@ def raw_to_job(raw: dict, cfg: dict) -> Job:
     )
 
 
+def _should_enrich(job: Job, cfg: dict) -> bool:
+    """Skip the API call for jobs that will be disqualified regardless."""
+    if not cfg.get("enrichment", {}).get("enabled"):
+        return False
+    if job.role_type in cfg.get("disqualifiers", {}).get("role_types", []):
+        return False
+    if job.location_normalized == "Other" and not job.is_remote:
+        return False
+    return True
+
+
+def _apply_enrichment(job: Job, data: dict) -> None:
+    for k in _ENRICH_FIELDS:
+        if k in ("skills_leverage", "required_credentials", "missing_requirements"):
+            if data.get(k):
+                setattr(job, k, data[k])
+        elif k in data:
+            setattr(job, k, data[k])
+    # The LLM read the full description, so prefer its guesses over keyword ones.
+    if data.get("role_type_guess"):
+        job.role_type = data["role_type_guess"]
+    if data.get("org_type_guess"):
+        job.org_type = data["org_type_guess"]
+    if data.get("org_size_guess"):
+        job.org_size = data["org_size_guess"]
+    job.enriched = True
+
+
+def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict) -> None:
+    existing = db.get(conn, job.id)
+    if existing and existing.enriched:
+        # Reuse prior enrichment — daily re-runs only pay for genuinely new jobs.
+        for k in (*_ENRICH_FIELDS, "role_type", "org_type", "org_size"):
+            setattr(job, k, getattr(existing, k))
+        job.enriched = True
+        return
+    if not _should_enrich(job, cfg):
+        return
+    data = enrichment.enrich(job, cfg)
+    if data:
+        _apply_enrichment(job, data)
+        stats["enriched"] += 1
+
+
 def run(sources: list[str], cfg: dict) -> dict:
     conn = db.connect()
     db.init_db(conn)
-    stats = {"fetched": 0, "new": 0, "updated": 0}
+    stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0}
     for name in sources:
         fetch = SOURCES.get(name)
         if not fetch:
@@ -94,6 +146,7 @@ def run(sources: list[str], cfg: dict) -> dict:
         for raw in raws:
             stats["fetched"] += 1
             job = raw_to_job(raw, cfg)
+            _maybe_enrich(conn, job, cfg, stats)
             job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
             is_new = db.upsert(conn, job)
             stats["new" if is_new else "updated"] += 1
@@ -138,7 +191,8 @@ def main() -> None:
         sources = [s for s in enabled if s in SOURCES] or list(SOURCES.keys())
 
     stats = run(sources, cfg)
-    log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d", stats)
+    log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d "
+             "enriched=%(enriched)d", stats)
 
 
 if __name__ == "__main__":

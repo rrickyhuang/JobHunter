@@ -46,19 +46,32 @@ def _fmt_commute(j) -> str:
     return j.location_normalized or "—"
 
 
+_QUAL_BADGE = {
+    "qualified": "qualified",
+    "stretch": "stretch  ",
+    "reach": "reach    ",
+    "overqualified": "overqual ",
+}
+
+
+def _qual(job) -> str:
+    return _QUAL_BADGE.get(job.qualification or "", "    ?    ")
+
+
 def list_view(jobs: list, show_all: bool) -> None:
     live = [j for j in jobs if not j.disqualifier]
     dead = [j for j in jobs if j.disqualifier]
     rows = jobs if show_all else live
 
-    print(f"\n  {'#':>2}  score                 source   title")
-    print("  " + "─" * 78)
+    print(f"\n  {'#':>2}  score              qual       source   title")
+    print("  " + "─" * 84)
     for i, j in enumerate(jobs):  # index over full list so `show.py N` is stable
         if j not in rows:
             continue
         flag = "★" if j.score >= 0.8 else " "
         tag = f"  ✗ {j.disqualifier}" if j.disqualifier else ""
-        print(f"  {i:>2}{flag} {j.score:.2f} {_bar(j.score)} {j.source:<8} {j.title[:40]}{tag}")
+        qual = "         " if j.disqualifier else _qual(j)
+        print(f"  {i:>2}{flag} {j.score:.2f} {_bar(j.score)} {qual} {j.source:<8} {j.title[:36]}{tag}")
     print("  " + "─" * 78)
     print(f"  {len(live)} scored · {len(dead)} disqualified"
           + ("" if show_all else "  (use --all to see disqualified)"))
@@ -79,6 +92,15 @@ def detail_view(job) -> None:
     print(f"  location     {job.location}  →  {job.location_normalized}")
     print(f"  commute      {_fmt_commute(job)}")
     print(f"  salary       {_fmt_salary(job)}  (raw: {job.salary_raw or '—'})")
+    print("  " + "─" * 78)
+    yrs = f"{job.required_years}+ yrs" if job.required_years else "yrs n/a"
+    print(f"  QUALIFICATION  {(job.qualification or '?').upper()}"
+          f"   (posting seniority: {job.seniority or '?'}, {yrs})")
+    if job.required_credentials:
+        print(f"  credentials  posting wants: {', '.join(job.required_credentials)}")
+    if job.missing_requirements:
+        print(f"  your gaps    {'; '.join(job.missing_requirements)}")
+    print("  " + "─" * 78)
     if job.fit_summary:
         print(f"  fit summary  {job.fit_summary}")
     if job.autonomy_evidence:

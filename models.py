@@ -56,6 +56,13 @@ class Job:
     autonomy_evidence: str | None = None
     fit_summary: str | None = None
 
+    # ── Qualification (display-only; does NOT affect score or ranking) ────────
+    seniority: str | None = None              # entry|junior|intermediate|senior|director
+    required_years: int | None = None
+    required_credentials: list[str] = field(default_factory=list)
+    qualification: str | None = None          # qualified|stretch|reach|overqualified
+    missing_requirements: list[str] = field(default_factory=list)
+
     # ── Meta ─────────────────────────────────────────────────────────────────
     posted_at: datetime | None = None
     scraped_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
