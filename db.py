@@ -188,6 +188,15 @@ def set_state(conn: sqlite3.Connection, job_id: str, **flags) -> None:
     conn.commit()
 
 
+def update_score(conn: sqlite3.Connection, job_id: str, score: float,
+                 breakdown: dict, disqualifier: str | None) -> None:
+    conn.execute(
+        "UPDATE jobs SET score = ?, score_breakdown = ?, disqualifier = ? WHERE id = ?",
+        (score, json.dumps(breakdown), disqualifier, job_id),
+    )
+    conn.commit()
+
+
 def clear_new_flags(conn: sqlite3.Connection) -> None:
     """Call after a digest is delivered so next run's 'new' is accurate."""
     conn.execute("UPDATE jobs SET is_new = 0 WHERE is_new = 1")

@@ -15,6 +15,7 @@ import logging
 import config
 import db
 import commute
+import scorer
 from models import Job
 from parsers.salary_cad import parse_salary
 from parsers.role_classifier import classify_role
@@ -93,10 +94,24 @@ def run(sources: list[str], cfg: dict) -> dict:
         for raw in raws:
             stats["fetched"] += 1
             job = raw_to_job(raw, cfg)
+            job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
             is_new = db.upsert(conn, job)
             stats["new" if is_new else "updated"] += 1
     conn.close()
     return stats
+
+
+def rescore(cfg: dict) -> int:
+    """Re-score every stored job in place (no re-scraping). Use after tuning
+    config weights or running enrichment."""
+    conn = db.connect()
+    db.init_db(conn)
+    jobs = db.query(conn, include_dismissed=True)
+    for job in jobs:
+        score, breakdown, disq = scorer.score_job(job, cfg)
+        db.update_score(conn, job.id, score, breakdown, disq)
+    conn.close()
+    return len(jobs)
 
 
 def main() -> None:
@@ -106,7 +121,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Scrape and store design-field jobs.")
     ap.add_argument("--source", help="run a single source by name")
     ap.add_argument("--all", action="store_true", help="run all enabled sources")
+    ap.add_argument("--rescore", action="store_true",
+                    help="re-score stored jobs without scraping")
     args = ap.parse_args()
+
+    if args.rescore:
+        n = rescore(cfg)
+        log.info("rescored %d jobs", n)
+        return
 
     if args.source:
         sources = [args.source]
