@@ -88,6 +88,13 @@ class Job:
     stage: str | None = None
     stage_at: datetime | None = None   # when the current stage was set
 
+    # ── Cross-source dedup ───────────────────────────────────────────────────
+    # Set by dedup.py when this job is judged a re-post of another job (e.g. the
+    # same posting scraped via an aggregator AND its originating org's own
+    # board). Holds the *other* job's id; the duplicate is hidden by default
+    # everywhere the "live" list shows up, same treatment as `dismissed`.
+    duplicate_of: str | None = None
+
     def __post_init__(self) -> None:
         if not self.id:
             self.id = self.make_id(self.source, self.external_id)

@@ -1,8 +1,10 @@
 """Weighted scoring model.
 
-Produces a 0..1 score plus a per-component breakdown, or forces 0 with a reason
-when a hard disqualifier trips. Tuned to Ricky's criteria: commute and genuine
-design-role fit lead; org type carries NO penalty; the salary floor is soft.
+Produces a 0..1 score plus a per-component breakdown. No category is hard-killed
+to 0 — every red flag (admin role, drafting-only, out-of-metro on-site, etc.) is
+a multiplicative soft penalty instead, so a job can still surface if it's a
+strong match despite one bad signal. Tuned to Ricky's criteria: commute and
+genuine design-role fit lead; org type carries NO penalty; the salary floor is soft.
 
 The commute component is computed upstream (commute.py) and stashed in
 ``job.score_breakdown['commute']`` by the scrape pipeline; the scorer reads it
@@ -25,15 +27,6 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     sc = cfg["scoring"]
     weights = sc["weights"]
     prefs = sc["preferences"]
-    dq = cfg.get("disqualifiers", {})
-
-    # ── HARD DISQUALIFIERS ──────────────────────────────────────────────────
-    if job.role_type in dq.get("role_types", []):
-        return 0.0, {"disqualified": f"role type: {job.role_type}"}, f"role_type={job.role_type}"
-    if dq.get("kill_if_admin_heavy") and job.is_admin_heavy:
-        return 0.0, {"disqualified": "admin-heavy role"}, "admin_heavy"
-    if dq.get("kill_if_outside_metro_and_onsite") and job.location_normalized == "Other":
-        return 0.0, {"disqualified": "outside Vancouver metro, on-site"}, "out_of_metro"
 
     breakdown: dict = {}
 
@@ -102,6 +95,28 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
         mult = sc.get("penalties", {}).get("admin_heavy", 0.4)
         total *= mult
         breakdown["_admin_penalty"] = mult
+
+    # Soft penalty for role_type == "admin": same idea, but for postings whose
+    # primary role IS admin rather than just admin-heavy in duties. Docked hard,
+    # not killed, since these can still be a strong experience match.
+    if job.role_type == "admin":
+        mult = sc.get("penalties", {}).get("role_type_admin", 0.4)
+        total *= mult
+        breakdown["_role_type_admin_penalty"] = mult
+
+    # Soft penalty for role_type == "drafting_only": same idea as role_type_admin.
+    if job.role_type == "drafting_only":
+        mult = sc.get("penalties", {}).get("role_type_drafting_only", 0.4)
+        total *= mult
+        breakdown["_role_type_drafting_only_penalty"] = mult
+
+    # Soft out-of-metro/on-site penalty: commute component is already 0 for these
+    # (see commute.py), so this adds an extra dock on top rather than killing the
+    # listing outright, keeping it visible but ranked low.
+    if job.location_normalized == "Other":
+        mult = sc.get("penalties", {}).get("out_of_metro", 0.4)
+        total *= mult
+        breakdown["_out_of_metro_penalty"] = mult
 
     # Soft non-full-time penalty: "unknown" isn't penalized — many genuinely
     # full-time postings never say so explicitly, so absence of a signal

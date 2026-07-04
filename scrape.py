@@ -7,6 +7,10 @@ Usage:
     python scrape.py --rescore             re-score stored jobs after a config/weights change (no scraping)
     python scrape.py --reenrich            force fresh Haiku enrichment on every stored job, then rescore
                                             (costs an API call per job — use after adding an enrichment field)
+    python scrape.py --dedup               re-run cross-source duplicate detection only (no scraping)
+
+Every --all/--source scrape re-runs dedup.py at the end automatically, so the
+DB stays clean without a separate step in the normal daily workflow.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ import db
 import commute
 import scorer
 import enrichment
+import dedup
 from models import Job
 
 _ENRICH_FIELDS = (
@@ -99,10 +104,8 @@ def raw_to_job(raw: dict, cfg: dict) -> Job:
 
 
 def _should_enrich(job: Job, cfg: dict) -> bool:
-    """Skip the API call for jobs that will be disqualified regardless."""
+    """Skip the API call where it wouldn't change anything worth paying for."""
     if not cfg.get("enrichment", {}).get("enabled"):
-        return False
-    if job.role_type in cfg.get("disqualifiers", {}).get("role_types", []):
         return False
     if job.location_normalized == "Other" and not job.is_remote:
         return False
@@ -147,7 +150,7 @@ def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False
 def run(sources: list[str], cfg: dict) -> dict:
     conn = db.connect()
     db.init_db(conn)
-    stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0}
+    stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0, "duplicates": 0}
     for name in sources:
         fetch = SOURCES.get(name)
         if not fetch:
@@ -166,6 +169,8 @@ def run(sources: list[str], cfg: dict) -> dict:
             job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
             is_new = db.upsert(conn, job)
             stats["new" if is_new else "updated"] += 1
+    dedup_stats = dedup.run(conn, cfg)
+    stats["duplicates"] = dedup_stats["duplicates"]
     conn.close()
     return stats
 
@@ -218,6 +223,8 @@ def main() -> None:
     ap.add_argument("--reenrich", action="store_true",
                     help="force fresh Haiku enrichment for every stored job, "
                          "then rescore (costs an API call per job)")
+    ap.add_argument("--dedup", action="store_true",
+                    help="re-run cross-source duplicate detection only (no scraping)")
     ap.add_argument("--digest", action="store_true",
                     help="build + deliver the digest after scraping")
     args = ap.parse_args()
@@ -233,6 +240,15 @@ def main() -> None:
                  "disqualified regardless)", stats)
         return
 
+    if args.dedup:
+        conn = db.connect()
+        db.init_db(conn)
+        stats = dedup.run(conn, cfg)
+        conn.close()
+        log.info("found %(groups)d duplicate group(s), marked %(duplicates)d "
+                 "job(s) as duplicates", stats)
+        return
+
     if args.source:
         sources = [args.source]
     elif args.all:
@@ -242,7 +258,7 @@ def main() -> None:
 
     stats = run(sources, cfg)
     log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d "
-             "enriched=%(enriched)d", stats)
+             "enriched=%(enriched)d duplicates=%(duplicates)d", stats)
 
     if args.digest:
         import digest

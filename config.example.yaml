@@ -69,14 +69,15 @@ scoring:
     per_hit: 0.02
     cap: 0.08
   penalties:
-    admin_heavy: 0.4      # score is multiplied by this if is_admin_heavy (soft dock, not a kill)
-    non_full_time: 0.5    # same, for part_time/casual/on_call/seasonal/temporary postings
+    admin_heavy: 0.4              # score is multiplied by this if is_admin_heavy (soft dock, not a kill)
+    role_type_admin: 0.4          # same, for postings whose primary role_type is "admin"
+    role_type_drafting_only: 0.4  # same, for postings whose primary role_type is "drafting_only"
+    out_of_metro: 0.4             # same, for out-of-metro on-site postings (location_normalized == "Other")
+    non_full_time: 0.5            # same, for part_time/casual/on_call/seasonal/temporary postings
 
-# ── Hard disqualifiers (force score to 0) ────────────────────────────────────
-disqualifiers:
-  role_types: ["admin", "drafting_only"]
-  kill_if_admin_heavy: true
-  kill_if_outside_metro_and_onsite: true
+# Nothing is hard-disqualified (score forced to 0) — every red flag above is a
+# soft multiplier penalty instead, so a job can still surface if it's a strong
+# match despite one bad signal.
 
 # ── Candidate profile (feeds the LLM enrichment prompt) ──────────────────────
 # Describe yourself here so the LLM can judge whether a posting actually fits.
@@ -96,6 +97,25 @@ profile:
   # bio) so the drafted letter sounds like you instead of generic AI prose.
   writing_sample: >
     (optional — paste a sample of your own writing here)
+
+# ── Cross-source dedup ───────────────────────────────────────────────────────
+# Aggregators and an org's own board can both list the same posting. After
+# every scrape, jobs are grouped across DIFFERENT sources by fuzzy title +
+# company match, and all but one "keeper" per group are hidden (marked
+# duplicate_of, not deleted — `show.py --all` reveals them).
+dedup:
+  enabled: true
+  title_similarity_threshold: 88     # rapidfuzz token_sort_ratio, 0-100
+  company_similarity_threshold: 80
+  description_similarity_threshold: 85
+  # Direct/authoritative sources should win over aggregators as the kept copy;
+  # lower index = kept preferentially. Sources not listed rank last.
+  source_priority:
+    - vancouver_gov
+    - municipal_taleo
+    - pibc
+    - csla
+    - indeed
 
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:

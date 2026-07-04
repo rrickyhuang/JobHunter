@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import addjob
 import coverletter
+import dedup
 import digest
 import mark
 import scrape
@@ -22,6 +23,7 @@ _SCRIPTS = [
     ("addjob.py", addjob, "Paste in a job you found yourself (LinkedIn/Indeed/etc.), or edit one."),
     ("coverletter.py", coverletter, "Draft a cover letter for any stored job via the claude CLI."),
     ("digest.py", digest, "Build/send the ranked shortlist without re-scraping."),
+    ("dedup.py", dedup, "Cross-source duplicate detection (runs automatically after every scrape)."),
 ]
 
 

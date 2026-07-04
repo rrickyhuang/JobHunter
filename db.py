@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     saved               INTEGER,
     dismissed           INTEGER,
     stage               TEXT,
-    stage_at            TEXT
+    stage_at            TEXT,
+    duplicate_of        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_new ON jobs(is_new);
@@ -107,6 +108,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "missing_requirements": "TEXT",
         "stage": "TEXT", "stage_at": "TEXT",
         "employment_type": "TEXT",
+        "duplicate_of": "TEXT",
     }
     stage_is_new = "stage" not in existing
     for col, typ in added.items():
@@ -170,7 +172,10 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
         conn.commit()
         return True
     # Update everything EXCEPT user/workflow state and is_new.
-    protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at"}
+    # duplicate_of is dedup.py's call, not a re-scrape's — a job's own fields
+    # can change on re-scrape without that verdict needing to be recomputed.
+    protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at",
+                 "duplicate_of"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -190,6 +195,7 @@ def query(
     min_score: float | None = None,
     new_only: bool = False,
     include_dismissed: bool = False,
+    include_duplicates: bool = False,
     order_by: str = "score DESC",
     limit: int | None = None,
 ) -> list[Job]:
@@ -202,6 +208,8 @@ def query(
         sql += " AND is_new = 1"
     if not include_dismissed:
         sql += " AND dismissed = 0"
+    if not include_duplicates:
+        sql += " AND duplicate_of IS NULL"
     sql += f" ORDER BY {order_by}"
     if limit:
         sql += " LIMIT ?"
@@ -233,6 +241,16 @@ def set_stage(conn: sqlite3.Connection, job_id: str, stage: str | None) -> None:
     conn.execute(
         "UPDATE jobs SET stage = ?, stage_at = ? WHERE id = ?",
         (stage, when, job_id),
+    )
+    conn.commit()
+
+
+def set_duplicate(conn: sqlite3.Connection, job_id: str, duplicate_of: str | None) -> None:
+    """Mark (or clear, with None) job_id as a re-post of another stored job.
+    Set by dedup.py; see models.Job.duplicate_of."""
+    conn.execute(
+        "UPDATE jobs SET duplicate_of = ? WHERE id = ?",
+        (duplicate_of, job_id),
     )
     conn.commit()
 

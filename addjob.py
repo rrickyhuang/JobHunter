@@ -14,6 +14,7 @@ import time
 
 import config
 import db
+import dedup
 import scorer
 from scrape import raw_to_job, _maybe_enrich
 
@@ -60,7 +61,8 @@ def _prompt_multiline_default(label: str, current: str) -> str:
 
 def _resolve_job(conn, target: str):
     if target.isdigit():
-        jobs = db.query(conn, include_dismissed=True, order_by="score DESC")
+        jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                        order_by="score DESC")
         idx = int(target)
         if idx < len(jobs):
             return jobs[idx]
@@ -72,6 +74,7 @@ def _save(conn, raw: dict, cfg: dict, *, force_enrich: bool) -> None:
     _maybe_enrich(conn, job, cfg, {"enriched": 0}, force=force_enrich)
     job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
     db.upsert(conn, job)
+    dedup.run(conn, cfg)
 
     print(f"\n  Saved. score={job.score:.2f}"
           f"{'  DISQUALIFIED: ' + job.disqualifier if job.disqualifier else ''}")

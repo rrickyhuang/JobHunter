@@ -106,10 +106,13 @@ def _status_code(job) -> str:
 def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None = None) -> None:
     auto_dq = [j for j in jobs if j.disqualifier]
     user_dismissed = [j for j in jobs if j.dismissed and not j.disqualifier]
-    live = [j for j in jobs if not j.disqualifier and not j.dismissed]
+    duplicates = [j for j in jobs if j.duplicate_of and not j.disqualifier and not j.dismissed]
+    live = [j for j in jobs if not j.disqualifier and not j.dismissed and not j.duplicate_of]
     rows = jobs if show_all else live
     if filters:
         rows = apply_filters(rows, filters)
+
+    by_id = {j.id: i for i, j in enumerate(jobs)}
 
     header = (f"\n  {'#':>{_IDX_W}} {'':<{_FLAG_W}} {'score':<{_SCORE_W}} "
               f"{'fit':<{_BAR_W}} {'qual':<{_QUAL_W}} {'status':<{_STATUS_W}} "
@@ -125,6 +128,9 @@ def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None 
             tags.append(f"[X] {j.disqualifier}")
         if j.dismissed:
             tags.append("[dismissed]")
+        if j.duplicate_of:
+            keeper_row = by_id.get(j.duplicate_of)
+            tags.append(f"[dup of #{keeper_row}]" if keeper_row is not None else "[duplicate]")
         tag = ("  " + "  ".join(tags)) if tags else ""
         qual = "" if j.disqualifier else _qual(j)
         print(f"  {i:>{_IDX_W}} {flag:<{_FLAG_W}} {j.score:.2f} {_bar(j.score)} "
@@ -132,8 +138,8 @@ def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None 
               f"{j.source[:_SRC_W]:<{_SRC_W}} {j.title[:_TITLE_W]}{tag}")
     print("  " + "-" * (len(header.strip("\n")) - 2))
     print(f"  {len(rows)} shown, {len(live)} scored, {len(auto_dq)} disqualified, "
-          f"{len(user_dismissed)} dismissed"
-          + ("" if show_all else "  (use --all to see disqualified/dismissed)"))
+          f"{len(user_dismissed)} dismissed, {len(duplicates)} duplicates"
+          + ("" if show_all else "  (use --all to see disqualified/dismissed/duplicates)"))
     if filters:
         print("  filters: " + ", ".join(f"{k}{'!=' if neg else '='}{v}" for k, v, neg in filters))
     print("  AP=applied  IV=interviewing  OF=offer  DN=denied  WD=withdrawn  S=saved (interested)")
@@ -149,6 +155,8 @@ def _status_line(job) -> str:
         parts.append("saved (interested)")
     if job.dismissed:
         parts.append("dismissed (not interested)")
+    if job.duplicate_of:
+        parts.append(f"duplicate of {job.duplicate_of}")
     if not parts:
         parts.append("seen" if job.seen else "new, not yet reviewed")
     return " · ".join(parts)
@@ -242,7 +250,7 @@ def html_report() -> None:
     conn = db.connect()
     db.init_db(conn)
     cfg = config.load_config()
-    jobs = db.query(conn, include_dismissed=True, order_by="score DESC")
+    jobs = db.query(conn, include_dismissed=True, include_duplicates=True, order_by="score DESC")
     out_dir = Path(__file__).with_name(cfg.get("delivery", {}).get("digest_dir", "digests"))
     out_dir.mkdir(exist_ok=True)
     path = out_dir / "report.html"
@@ -279,8 +287,8 @@ def main() -> None:
 
     conn = db.connect()
     db.init_db(conn)
-    jobs = db.query(conn, include_dismissed=True, min_score=min_score or None,
-                    order_by="score DESC")
+    jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                    min_score=min_score or None, order_by="score DESC")
 
     # Detail request: a bare integer (row #) or a job id. Row numbers always
     # refer to this full, unfiltered list — see list_view's own comment on why.

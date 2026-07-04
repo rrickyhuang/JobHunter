@@ -38,7 +38,8 @@ _ALL_STATUSES = sorted(_STAGE_STATUSES | set(_BOOL_STATUSES))
 
 def _resolve_job(conn, target: str):
     if target.isdigit():
-        jobs = db.query(conn, include_dismissed=True, order_by="score DESC")
+        jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                        order_by="score DESC")
         idx = int(target)
         if idx < len(jobs):
             return jobs[idx]

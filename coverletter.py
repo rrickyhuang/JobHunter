@@ -27,7 +27,8 @@ _OUT_DIR = Path(__file__).with_name("digests") / "cover_letters"
 
 def _resolve_job(conn, target: str):
     if target.isdigit():
-        jobs = db.query(conn, include_dismissed=True, order_by="score DESC")
+        jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                        order_by="score DESC")
         idx = int(target)
         if idx < len(jobs):
             return jobs[idx]
