@@ -103,4 +103,12 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
         total *= mult
         breakdown["_admin_penalty"] = mult
 
+    # Soft non-full-time penalty: "unknown" isn't penalized — many genuinely
+    # full-time postings never say so explicitly, so absence of a signal
+    # shouldn't be treated as a part-time/casual signal.
+    if job.employment_type and job.employment_type not in ("full_time", "unknown"):
+        mult = sc.get("penalties", {}).get("non_full_time", 0.5)
+        total *= mult
+        breakdown["_employment_penalty"] = mult
+
     return round(total, 4), breakdown, None

@@ -3,6 +3,10 @@
     python show.py              ranked list (scored jobs only)
     python show.py --all        include disqualified AND dismissed jobs
     python show.py --min 0.6    only jobs at/above a score
+    python show.py --filter source=pibc                  substring/exact match on any Job field
+    python show.py --filter role_type=landscape_arch      (repeat --filter for AND conditions)
+    python show.py --filter stage!=applied               != negates the match
+    python show.py --filter stage=applied --filter saved=true
     python show.py 3            detail for row #3 from the list (description truncated past 1200 chars)
     python show.py 3 --full     same, but the full description untruncated
     python show.py <job_id>     detail by id (also supports --full)
@@ -14,9 +18,11 @@ companion script: `python mark.py <row-# or id> <status>`.
 from __future__ import annotations
 
 import sys
+from dataclasses import fields as dataclass_fields
 
 import config
 import db
+from models import Job
 
 # Windows consoles default to cp1252 and choke on box/bar glyphs. Force UTF-8.
 try:
@@ -72,30 +78,41 @@ _QUAL_BADGE = {
 # Fixed column widths so rows line up regardless of terminal/font — deliberately
 # ASCII-only for the flag/tag markers, since glyphs like ★/✗ render at an
 # inconsistent width in the classic Windows console (conhost), breaking alignment.
-_IDX_W, _FLAG_W, _SCORE_W, _BAR_W, _QUAL_W, _STATUS_W, _SRC_W, _TITLE_W = 3, 1, 4, 16, 9, 1, 17, 40
+_IDX_W, _FLAG_W, _SCORE_W, _BAR_W, _QUAL_W, _STATUS_W, _SRC_W, _TITLE_W = 3, 1, 4, 16, 9, 6, 17, 40
+
+_STAGE_CODE = {
+    "applied": "AP",
+    "interviewing": "IV",
+    "offer": "OF",
+    "denied": "DN",
+    "withdrawn": "WD",
+}
 
 
 def _qual(job) -> str:
     return _QUAL_BADGE.get(job.qualification or "", "?")
 
 
-def _status_char(job) -> str:
-    # Priority order: applied is the most important thing to spot at a glance.
-    if job.applied:
-        return "A"
+def _status_code(job) -> str:
+    # Priority order: application stage is the most important thing to spot
+    # at a glance, then plain "interested" if no stage has been set yet.
+    if job.stage:
+        return _STAGE_CODE.get(job.stage, "?")
     if job.saved:
         return "S"
-    return " "
+    return ""
 
 
-def list_view(jobs: list, show_all: bool) -> None:
+def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None = None) -> None:
     auto_dq = [j for j in jobs if j.disqualifier]
     user_dismissed = [j for j in jobs if j.dismissed and not j.disqualifier]
     live = [j for j in jobs if not j.disqualifier and not j.dismissed]
     rows = jobs if show_all else live
+    if filters:
+        rows = apply_filters(rows, filters)
 
     header = (f"\n  {'#':>{_IDX_W}} {'':<{_FLAG_W}} {'score':<{_SCORE_W}} "
-              f"{'fit':<{_BAR_W}} {'qual':<{_QUAL_W}} {'':<{_STATUS_W}} "
+              f"{'fit':<{_BAR_W}} {'qual':<{_QUAL_W}} {'status':<{_STATUS_W}} "
               f"{'source':<{_SRC_W}} title")
     print(header)
     print("  " + "-" * (len(header.strip("\n")) - 2))
@@ -111,20 +128,23 @@ def list_view(jobs: list, show_all: bool) -> None:
         tag = ("  " + "  ".join(tags)) if tags else ""
         qual = "" if j.disqualifier else _qual(j)
         print(f"  {i:>{_IDX_W}} {flag:<{_FLAG_W}} {j.score:.2f} {_bar(j.score)} "
-              f"{qual:<{_QUAL_W}} {_status_char(j):<{_STATUS_W}} "
+              f"{qual:<{_QUAL_W}} {_status_code(j):<{_STATUS_W}} "
               f"{j.source[:_SRC_W]:<{_SRC_W}} {j.title[:_TITLE_W]}{tag}")
     print("  " + "-" * (len(header.strip("\n")) - 2))
-    print(f"  {len(live)} scored, {len(auto_dq)} disqualified, {len(user_dismissed)} dismissed"
+    print(f"  {len(rows)} shown, {len(live)} scored, {len(auto_dq)} disqualified, "
+          f"{len(user_dismissed)} dismissed"
           + ("" if show_all else "  (use --all to see disqualified/dismissed)"))
-    print("  A = applied, S = saved (interested)")
+    if filters:
+        print("  filters: " + ", ".join(f"{k}{'!=' if neg else '='}{v}" for k, v, neg in filters))
+    print("  AP=applied  IV=interviewing  OF=offer  DN=denied  WD=withdrawn  S=saved (interested)")
     print("  Tip: `python show.py <#>` for full detail, `python mark.py <#> <status>` to update it.\n")
 
 
 def _status_line(job) -> str:
     parts = []
-    if job.applied:
-        when = job.applied_at.date().isoformat() if job.applied_at else "date unknown"
-        parts.append(f"APPLIED ({when})")
+    if job.stage:
+        when = job.stage_at.date().isoformat() if job.stage_at else "date unknown"
+        parts.append(f"{job.stage.upper()} ({when})")
     if job.saved:
         parts.append("saved (interested)")
     if job.dismissed:
@@ -145,6 +165,7 @@ def detail_view(job, index: int | None = None, full: bool = False) -> None:
     if job.disqualifier:
         print(f"  DISQUALIFIED {job.disqualifier}")
     print(f"  role         {job.role_type}")
+    print(f"  employment   {job.employment_type or 'unknown'}")
     print(f"  org          {job.org_type} ({job.org_size})")
     print(f"  location     \"{job.location}\"  →  {_LOC_CATEGORY.get(job.location_normalized, job.location_normalized)}")
     print(f"  commute      {_fmt_commute(job)}")
@@ -170,6 +191,10 @@ def detail_view(job, index: int | None = None, full: bool = False) -> None:
         print(f"    {k:16} {v:.2f} {_bar(float(v), 12)}")
     if "_base" in bd:
         print(f"    {'(base/bonus)':16} {bd.get('_base',0):.2f} + {bd.get('_bonus',0):.2f}")
+    if "_admin_penalty" in bd:
+        print(f"    {'(admin penalty)':16} x{bd['_admin_penalty']}")
+    if "_employment_penalty" in bd:
+        print(f"    {'(employment penalty)':21} x{bd['_employment_penalty']}")
     print("  " + "─" * 78)
     desc = (job.description or "").strip()
     print("  description:\n")
@@ -179,6 +204,33 @@ def detail_view(job, index: int | None = None, full: bool = False) -> None:
         print("    " + desc[:1200].replace("\n", "\n    "))
         print(f"    … (+{len(desc) - 1200} more chars — rerun with --full to see all of it)")
     print()
+
+
+_FILTERABLE_FIELDS = {f.name for f in dataclass_fields(Job)}
+
+
+def _matches(job, key: str, value: str) -> bool:
+    actual = getattr(job, key)
+    if isinstance(actual, bool):
+        return actual == (value.strip().lower() in ("1", "true", "yes", "y"))
+    if actual is None:
+        return value == ""
+    if isinstance(actual, str):
+        return value.lower() in actual.lower()
+    return str(actual).lower() == value.lower()
+
+
+def apply_filters(jobs: list, filters: list[tuple[str, str, bool]]) -> list:
+    """AND-combine one or more field=value (or field!=value) filters against
+    any Job field. Strings match by case-insensitive substring; bools/others
+    by exact match. != negates whichever of those a field would use."""
+    for key, value, negate in filters:
+        if key not in _FILTERABLE_FIELDS:
+            print(f"\n  Unknown field {key!r}. Valid fields: "
+                  f"{', '.join(sorted(_FILTERABLE_FIELDS))}\n")
+            sys.exit(1)
+        jobs = [j for j in jobs if _matches(j, key, value) != negate]
+    return jobs
 
 
 def html_report() -> None:
@@ -207,19 +259,32 @@ def main() -> None:
     show_all = "--all" in args
     full = "--full" in args
     min_score = 0.0
-    if "--min" in args:
-        i = args.index("--min")
-        min_score = float(args[i + 1])
-    positional = [a for a in args if not a.startswith("--")
-                  and not (a.replace(".", "").isdigit() and args[args.index(a) - 1] == "--min")]
+    filters: list[tuple[str, str, bool]] = []
+    consumed: set[int] = set()  # arg indices consumed as a flag's value, not a target
+    for i, a in enumerate(args):
+        if a == "--min" and i + 1 < len(args):
+            min_score = float(args[i + 1])
+            consumed.add(i + 1)
+        elif a == "--filter" and i + 1 < len(args):
+            raw = args[i + 1]
+            if "!=" in raw:
+                key, _, value = raw.partition("!=")
+                filters.append((key, value, True))
+            else:
+                key, _, value = raw.partition("=")
+                filters.append((key, value, False))
+            consumed.add(i + 1)
+    positional = [a for i, a in enumerate(args)
+                  if i not in consumed and not a.startswith("--")]
 
     conn = db.connect()
     db.init_db(conn)
     jobs = db.query(conn, include_dismissed=True, min_score=min_score or None,
                     order_by="score DESC")
 
-    # Detail request: a bare integer (row #) or a job id.
-    target = next((a for a in positional if a not in ("--all",)), None)
+    # Detail request: a bare integer (row #) or a job id. Row numbers always
+    # refer to this full, unfiltered list — see list_view's own comment on why.
+    target = positional[0] if positional else None
     if target is not None:
         if target.isdigit() and int(target) < len(jobs):
             index = int(target)
@@ -236,7 +301,7 @@ def main() -> None:
     if not jobs:
         print("\n  No jobs in the database yet. Run:  python scrape.py --all\n")
         return
-    list_view(jobs, show_all)
+    list_view(jobs, show_all, filters)
 
 
 if __name__ == "__main__":

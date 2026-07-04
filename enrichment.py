@@ -25,8 +25,10 @@ ROLE_TYPES = (
     "interior_design, graphic_design, industrial_design, digital_design, "
     "ops_design, design_adjacent, pm_only, admin, drafting_only, unknown"
 )
+EMPLOYMENT_TYPES = "full_time, part_time, casual, on_call, seasonal, temporary, unknown"
 
 _VALID_ROLE = set(r.strip() for r in ROLE_TYPES.split(","))
+_VALID_EMPLOYMENT = set(e.strip() for e in EMPLOYMENT_TYPES.split(","))
 _VALID_QUAL = {"qualified", "stretch", "reach", "overqualified"}
 _VALID_SENIORITY = {"entry", "junior", "intermediate", "senior", "director"}
 
@@ -76,6 +78,7 @@ Description:
   "is_hierarchical": true/false/null,
   "skills_leverage": ["which of the candidate's skills the role uses"],
   "role_type_guess": "one of: {ROLE_TYPES} (ops_design = in-house design/space-planning role at a logistics, retail, or manufacturing company rather than a design studio)",
+  "employment_type_guess": "one of: {EMPLOYMENT_TYPES} (unknown if the posting genuinely doesn't say — don't assume full_time just because it's not stated)",
   "org_type_guess": "studio_consultancy|municipal_govt|provincial_govt|large_eng_firm|developer|nonprofit_civic|unknown",
   "org_size_guess": "small|mid|large|unknown",
   "seniority": "entry|junior|intermediate|senior|director",
@@ -111,6 +114,8 @@ def _coerce(data: dict) -> dict:
 
     rt = data.get("role_type_guess")
     out["role_type_guess"] = rt if rt in _VALID_ROLE else None
+    et = data.get("employment_type_guess")
+    out["employment_type_guess"] = et if et in _VALID_EMPLOYMENT else None
     q = data.get("qualification")
     out["qualification"] = q if q in _VALID_QUAL else None
     sen = data.get("seniority")

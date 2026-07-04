@@ -1,11 +1,12 @@
-"""CLI entry point: scrape -> normalize/parse -> commute -> store.
-
-Scoring (Phase 3), enrichment (Phase 4), and the digest (Phase 7) hook into
-``run()`` later. For now this proves real data flows end-to-end into SQLite.
+"""CLI entry point: scrape -> parse/normalize -> commute -> enrich -> score -> store.
 
 Usage:
-    python scrape.py --all
-    python scrape.py --source indeed
+    python scrape.py --all                run every enabled source (see config.yaml sources:)
+    python scrape.py --source pibc         run a single source by name
+    python scrape.py --all --digest        scrape everything, then build + email the digest
+    python scrape.py --rescore             re-score stored jobs after a config/weights change (no scraping)
+    python scrape.py --reenrich            force fresh Haiku enrichment on every stored job, then rescore
+                                            (costs an API call per job — use after adding an enrichment field)
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ _ENRICH_FIELDS = (
 )
 from parsers.salary_cad import parse_salary
 from parsers.role_classifier import classify_role
+from parsers.employment_classifier import classify_employment_type
 from parsers.org_classifier import classify_org
 from parsers.normalize import normalize_location
 
@@ -64,6 +66,7 @@ def raw_to_job(raw: dict, cfg: dict) -> Job:
 
     salary_min, salary_max, salary_raw = parse_salary(raw.get("salary_raw") or blob)
     role_type = classify_role(title, description)
+    employment_type = classify_employment_type(title, description)
     org_type, org_size = classify_org(company, description)
     loc_norm, is_remote = normalize_location(location, description)
     com = commute.estimate(location, loc_norm, is_remote, cfg)
@@ -85,6 +88,7 @@ def raw_to_job(raw: dict, cfg: dict) -> Job:
         salary_max=salary_max,
         salary_raw=salary_raw,
         role_type=role_type,
+        employment_type=employment_type,
         org_type=org_type,
         org_size=org_size,
         posted_at=raw.get("posted_at"),
@@ -115,6 +119,8 @@ def _apply_enrichment(job: Job, data: dict) -> None:
     # The LLM read the full description, so prefer its guesses over keyword ones.
     if data.get("role_type_guess"):
         job.role_type = data["role_type_guess"]
+    if data.get("employment_type_guess"):
+        job.employment_type = data["employment_type_guess"]
     if data.get("org_type_guess"):
         job.org_type = data["org_type_guess"]
     if data.get("org_size_guess"):
@@ -177,6 +183,29 @@ def rescore(cfg: dict) -> int:
     return len(jobs)
 
 
+def reenrich(cfg: dict) -> dict:
+    """Force fresh Haiku enrichment for every stored job (no re-scraping),
+    bypassing the usual reuse-prior-enrichment shortcut. Use after adding or
+    changing an enrichment field so already-stored jobs benefit too, not just
+    newly-scraped ones."""
+    conn = db.connect()
+    db.init_db(conn)
+    jobs = db.query(conn, include_dismissed=True)
+    stats = {"enriched": 0, "skipped": 0}
+    for job in jobs:
+        if not _should_enrich(job, cfg):
+            stats["skipped"] += 1
+        else:
+            data = enrichment.enrich(job, cfg)
+            if data:
+                _apply_enrichment(job, data)
+                stats["enriched"] += 1
+        job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
+        db.upsert(conn, job)
+    conn.close()
+    return stats
+
+
 def main() -> None:
     cfg = config.load_config()
     enabled = [s for s, on in cfg.get("sources", {}).items() if on]
@@ -186,6 +215,9 @@ def main() -> None:
     ap.add_argument("--all", action="store_true", help="run all enabled sources")
     ap.add_argument("--rescore", action="store_true",
                     help="re-score stored jobs without scraping")
+    ap.add_argument("--reenrich", action="store_true",
+                    help="force fresh Haiku enrichment for every stored job, "
+                         "then rescore (costs an API call per job)")
     ap.add_argument("--digest", action="store_true",
                     help="build + deliver the digest after scraping")
     args = ap.parse_args()
@@ -193,6 +225,12 @@ def main() -> None:
     if args.rescore:
         n = rescore(cfg)
         log.info("rescored %d jobs", n)
+        return
+
+    if args.reenrich:
+        stats = reenrich(cfg)
+        log.info("re-enriched %(enriched)d jobs (%(skipped)d skipped, "
+                 "disqualified regardless)", stats)
         return
 
     if args.source:

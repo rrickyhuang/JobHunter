@@ -1,12 +1,22 @@
-"""Mark a job's application status: applied, interested (saved), not
-interested (dismissed), or seen. Works on any job — scraped or manual.
+"""Mark a job's status: application-pipeline stage (applied, interviewing,
+offer, denied, withdrawn), or interested/not-interested/seen. Works on any
+job — scraped or manual. Takes one or more row-#s/ids before the status to
+mark several jobs in one command.
 
 Usage:
-    python mark.py <row-# or id> applied
-    python mark.py <row-# or id> interested
-    python mark.py <row-# or id> not-interested
-    python mark.py <row-# or id> seen
-    python mark.py <row-# or id> <status> --clear   # undo
+    python mark.py <row-# or id> [<row-# or id> ...] applied
+    python mark.py <row-# or id> [<row-# or id> ...] interviewing
+    python mark.py <row-# or id> [<row-# or id> ...] offer
+    python mark.py <row-# or id> [<row-# or id> ...] denied
+    python mark.py <row-# or id> [<row-# or id> ...] withdrawn
+    python mark.py <row-# or id> [<row-# or id> ...] interested
+    python mark.py <row-# or id> [<row-# or id> ...] not-interested
+    python mark.py <row-# or id> [<row-# or id> ...] seen
+    python mark.py <row-# or id> [<row-# or id> ...] <status> --clear   # undo
+
+Setting any pipeline stage replaces whatever stage was set before — it's a
+single progression, not independent flags. --clear on any stage word resets
+it back to "not applied" regardless of which stage word you used.
 
 Dismissed ("not interested") jobs are hidden from `show.py`'s default list —
 use `show.py --all` to see them too.
@@ -17,12 +27,13 @@ import sys
 
 import db
 
-_STATUSES = {
-    "applied": "applied",
+_STAGE_STATUSES = set(db.STAGES)
+_BOOL_STATUSES = {
     "interested": "saved",
     "not-interested": "dismissed",
     "seen": "seen",
 }
+_ALL_STATUSES = sorted(_STAGE_STATUSES | set(_BOOL_STATUSES))
 
 
 def _resolve_job(conn, target: str):
@@ -38,31 +49,33 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if a != "--clear"]
     clear = "--clear" in sys.argv[1:]
     if len(args) < 2:
-        print(f"\n  Usage: python mark.py <row-# or id> <{'|'.join(_STATUSES)}> [--clear]\n")
+        print(f"\n  Usage: python mark.py <row-# or id> [<row-# or id> ...] "
+              f"<{'|'.join(_ALL_STATUSES)}> [--clear]\n")
         sys.exit(1)
 
-    target, status = args[0], args[1]
-    if status not in _STATUSES:
-        print(f"\n  Unknown status {status!r}. Choose one of: {', '.join(_STATUSES)}\n")
+    *targets, status = args
+    if status not in _STAGE_STATUSES and status not in _BOOL_STATUSES:
+        print(f"\n  Unknown status {status!r}. Choose one of: {', '.join(_ALL_STATUSES)}\n")
         sys.exit(1)
 
     conn = db.connect()
     db.init_db(conn)
-    job = _resolve_job(conn, target)
-    if not job:
-        print(f"\n  No job found for {target!r}\n")
-        conn.close()
-        sys.exit(1)
-
-    value = not clear
-    if status == "applied":
-        db.mark_applied(conn, job.id, applied=value)
-    else:
-        db.set_state(conn, job.id, **{_STATUSES[status]: value})
-    conn.close()
-
     verb = "Cleared" if clear else "Marked"
-    print(f"\n  {verb}: {status} - {job.title} @ {job.company}\n")
+    print()
+    updated = 0
+    for target in targets:
+        job = _resolve_job(conn, target)
+        if not job:
+            print(f"  No job found for {target!r} - skipped")
+            continue
+        if status in _STAGE_STATUSES:
+            db.set_stage(conn, job.id, None if clear else status)
+        else:
+            db.set_state(conn, job.id, **{_BOOL_STATUSES[status]: not clear})
+        print(f"  {verb}: {status} - {job.title} @ {job.company}")
+        updated += 1
+    conn.close()
+    print(f"\n  {updated}/{len(targets)} updated.\n")
 
 
 if __name__ == "__main__":

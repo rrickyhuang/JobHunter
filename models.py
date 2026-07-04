@@ -41,6 +41,10 @@ class Job:
     # urban_design | landscape_arch | planning | civic_innovation
     # | architecture | admin | pm_only | drafting_only | unknown
 
+    # ── Employment type (soft-penalized, not disqualifying — see scorer.py) ──
+    employment_type: str | None = None
+    # full_time | part_time | casual | on_call | seasonal | temporary | unknown
+
     # ── Org classification (informational only — no scoring penalty) ─────────
     org_type: str | None = None
     org_size: str | None = None      # small | mid | large | unknown
@@ -79,8 +83,10 @@ class Job:
     seen: bool = False
     saved: bool = False          # "interested" / shortlisted
     dismissed: bool = False      # "not interested"
-    applied: bool = False
-    applied_at: datetime | None = None
+    # Application pipeline: None (not applied) -> applied -> interviewing ->
+    # offer | denied | withdrawn. See mark.py for the CLI to set these.
+    stage: str | None = None
+    stage_at: datetime | None = None   # when the current stage was set
 
     def __post_init__(self) -> None:
         if not self.id:

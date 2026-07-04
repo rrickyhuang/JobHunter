@@ -68,6 +68,9 @@ scoring:
       - "process"
     per_hit: 0.02
     cap: 0.08
+  penalties:
+    admin_heavy: 0.4      # score is multiplied by this if is_admin_heavy (soft dock, not a kill)
+    non_full_time: 0.5    # same, for part_time/casual/on_call/seasonal/temporary postings
 
 # ── Hard disqualifiers (force score to 0) ────────────────────────────────────
 disqualifiers:

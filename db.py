@@ -21,11 +21,11 @@ DB_PATH = Path(__file__).with_name("jobs.db")
 # Fields that need JSON or ISO encoding rather than raw scalar storage.
 _JSON_FIELDS = {"skills_leverage", "score_breakdown",
                 "required_credentials", "missing_requirements"}
-_DATETIME_FIELDS = {"posted_at", "scraped_at", "applied_at"}
+_DATETIME_FIELDS = {"posted_at", "scraped_at", "stage_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
     "is_admin_heavy", "is_drafting_only", "is_hierarchical",
-    "enriched", "is_new", "seen", "saved", "dismissed", "applied",
+    "enriched", "is_new", "seen", "saved", "dismissed",
 }
 
 SCHEMA = """
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     salary_max          INTEGER,
     salary_raw          TEXT,
     role_type           TEXT,
+    employment_type     TEXT,
     org_type            TEXT,
     org_size            TEXT,
     has_design_autonomy INTEGER,
@@ -74,8 +75,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     seen                INTEGER,
     saved               INTEGER,
     dismissed           INTEGER,
-    applied             INTEGER,
-    applied_at          TEXT
+    stage               TEXT,
+    stage_at            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_new ON jobs(is_new);
@@ -104,11 +105,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "seniority": "TEXT", "required_years": "INTEGER",
         "required_credentials": "TEXT", "qualification": "TEXT",
         "missing_requirements": "TEXT",
-        "applied": "INTEGER", "applied_at": "TEXT",
+        "stage": "TEXT", "stage_at": "TEXT",
+        "employment_type": "TEXT",
     }
+    stage_is_new = "stage" not in existing
     for col, typ in added.items():
         if col not in existing:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
+    # One-time backfill: older DBs tracked a plain applied/applied_at pair
+    # before the fuller applied->interviewing->offer/denied/withdrawn pipeline.
+    if stage_is_new and "applied" in existing:
+        conn.execute(
+            "UPDATE jobs SET stage = 'applied', stage_at = applied_at "
+            "WHERE applied = 1"
+        )
     conn.commit()
 
 
@@ -160,7 +170,7 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
         conn.commit()
         return True
     # Update everything EXCEPT user/workflow state and is_new.
-    protected = {"id", "seen", "saved", "dismissed", "is_new", "applied", "applied_at"}
+    protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -213,12 +223,16 @@ def set_state(conn: sqlite3.Connection, job_id: str, **flags) -> None:
     conn.commit()
 
 
-def mark_applied(conn: sqlite3.Connection, job_id: str, applied: bool = True) -> None:
-    """Set applied status and stamp (or clear) applied_at accordingly."""
-    when = datetime.now(timezone.utc).isoformat() if applied else None
+STAGES = ("applied", "interviewing", "offer", "denied", "withdrawn")
+
+
+def set_stage(conn: sqlite3.Connection, job_id: str, stage: str | None) -> None:
+    """Set the application-pipeline stage (or None to clear it), stamping
+    stage_at with when this stage was set."""
+    when = datetime.now(timezone.utc).isoformat() if stage else None
     conn.execute(
-        "UPDATE jobs SET applied = ?, applied_at = ? WHERE id = ?",
-        (int(applied), when, job_id),
+        "UPDATE jobs SET stage = ?, stage_at = ? WHERE id = ?",
+        (stage, when, job_id),
     )
     conn.commit()
 
