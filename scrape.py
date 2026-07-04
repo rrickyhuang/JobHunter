@@ -36,7 +36,8 @@ log = logging.getLogger("scrape")
 # Registry of available sources -> their fetch(cfg) callables.
 from scrapers import (
     source_indeed, source_pibc, source_csla, source_vancouver,
-    source_municipal_taleo,
+    source_municipal_taleo, source_north_shore, source_port_moody,
+    source_coquitlam, source_concrete_cashmere,
 )
 
 SOURCES = {
@@ -45,7 +46,11 @@ SOURCES = {
     "indeed": source_indeed.fetch,   # shelved: Indeed serves 403, handled gracefully
     "vancouver_gov": source_vancouver.fetch,
     "municipal_taleo": source_municipal_taleo.fetch,
-    # archinect / idealist / firm_direct land in later phases
+    "north_shore": source_north_shore.fetch,
+    "port_moody": source_port_moody.fetch,
+    "coquitlam": source_coquitlam.fetch,
+    "concrete_cashmere": source_concrete_cashmere.fetch,
+    # archinect / idealist / more firm_direct targets land in later phases
 }
 
 
@@ -117,8 +122,8 @@ def _apply_enrichment(job: Job, data: dict) -> None:
     job.enriched = True
 
 
-def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict) -> None:
-    existing = db.get(conn, job.id)
+def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False) -> None:
+    existing = None if force else db.get(conn, job.id)
     if existing and existing.enriched:
         # Reuse prior enrichment — daily re-runs only pay for genuinely new jobs.
         for k in (*_ENRICH_FIELDS, "role_type", "org_type", "org_size"):

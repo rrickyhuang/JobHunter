@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
@@ -21,11 +21,11 @@ DB_PATH = Path(__file__).with_name("jobs.db")
 # Fields that need JSON or ISO encoding rather than raw scalar storage.
 _JSON_FIELDS = {"skills_leverage", "score_breakdown",
                 "required_credentials", "missing_requirements"}
-_DATETIME_FIELDS = {"posted_at", "scraped_at"}
+_DATETIME_FIELDS = {"posted_at", "scraped_at", "applied_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
     "is_admin_heavy", "is_drafting_only", "is_hierarchical",
-    "enriched", "is_new", "seen", "saved", "dismissed",
+    "enriched", "is_new", "seen", "saved", "dismissed", "applied",
 }
 
 SCHEMA = """
@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     is_new              INTEGER,
     seen                INTEGER,
     saved               INTEGER,
-    dismissed           INTEGER
+    dismissed           INTEGER,
+    applied             INTEGER,
+    applied_at          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_new ON jobs(is_new);
@@ -102,6 +104,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "seniority": "TEXT", "required_years": "INTEGER",
         "required_credentials": "TEXT", "qualification": "TEXT",
         "missing_requirements": "TEXT",
+        "applied": "INTEGER", "applied_at": "TEXT",
     }
     for col, typ in added.items():
         if col not in existing:
@@ -157,7 +160,7 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
         conn.commit()
         return True
     # Update everything EXCEPT user/workflow state and is_new.
-    protected = {"id", "seen", "saved", "dismissed", "is_new"}
+    protected = {"id", "seen", "saved", "dismissed", "is_new", "applied", "applied_at"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -206,6 +209,16 @@ def set_state(conn: sqlite3.Connection, job_id: str, **flags) -> None:
     conn.execute(
         f"UPDATE jobs SET {set_clause} WHERE id = ?",
         (*updates.values(), job_id),
+    )
+    conn.commit()
+
+
+def mark_applied(conn: sqlite3.Connection, job_id: str, applied: bool = True) -> None:
+    """Set applied status and stamp (or clear) applied_at accordingly."""
+    when = datetime.now(timezone.utc).isoformat() if applied else None
+    conn.execute(
+        "UPDATE jobs SET applied = ?, applied_at = ? WHERE id = ?",
+        (int(applied), when, job_id),
     )
     conn.commit()
 

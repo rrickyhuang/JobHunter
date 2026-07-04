@@ -16,6 +16,7 @@ profile.yaml
 digests/
 .geocode_cache.json
 *.geocode_cache.json
+logs/
 
 # ── Python ──
 __pycache__/

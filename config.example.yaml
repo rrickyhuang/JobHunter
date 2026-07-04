@@ -88,6 +88,11 @@ profile:
     - "Tools you know"
   differentiator: >
     Anything that sets you apart from other candidates.
+  # Used only by coverletter.py, to ground tone/voice — not fed into enrichment.
+  # Paste 1-2 paragraphs of your own writing (an email, a past cover letter, a
+  # bio) so the drafted letter sounds like you instead of generic AI prose.
+  writing_sample: >
+    (optional — paste a sample of your own writing here)
 
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:
@@ -114,6 +119,10 @@ sources:
   firm_direct: true
   vancouver_gov: true      # City of Vancouver job board (SAP SuccessFactors)
   municipal_taleo: true    # nearby municipalities on the shared Taleo template
+  north_shore: true        # District + City of North Vancouver (shared PeopleAdmin template)
+  port_moody: true         # Govstack/njoyn board
+  coquitlam: true          # Cegid/Talentsoft board embedded on the homepage
+  concrete_cashmere: true  # small Vancouver interior design-build studio (firm-direct)
 
 # Direct firm careers pages to scrape, e.g.:
 #   - { name: "Some Studio", careers_url: "https://example.com/careers" }

@@ -77,8 +77,10 @@ class Job:
     enriched: bool = False
     is_new: bool = True
     seen: bool = False
-    saved: bool = False
-    dismissed: bool = False
+    saved: bool = False          # "interested" / shortlisted
+    dismissed: bool = False      # "not interested"
+    applied: bool = False
+    applied_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.id:
