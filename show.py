@@ -1,8 +1,9 @@
 """Read-only viewer for the jobs database.
 
-    python show.py              ranked list (scored jobs only)
+    python show.py              ranked list (score >= 0.25 by default)
     python show.py --all        include disqualified AND dismissed jobs
     python show.py --min 0.6    only jobs at/above a score
+    python show.py --min 0      no score floor (show everything, incl. low scores)
     python show.py --filter source=pibc                  substring/exact match on any Job field
     python show.py --filter role_type=landscape_arch      (repeat --filter for AND conditions)
     python show.py --filter stage!=applied               != negates the match
@@ -275,7 +276,7 @@ def main() -> None:
         return
     show_all = "--all" in args
     full = "--full" in args
-    min_score = 0.0
+    min_score = 0.25
     filters: list[tuple[str, str, bool]] = []
     consumed: set[int] = set()  # arg indices consumed as a flag's value, not a target
     for i, a in enumerate(args):
