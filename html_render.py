@@ -93,7 +93,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     if row_no is not None:
         id_row = (f'<div style="color:#8b949e;font-size:12px;margin-top:2px;">'
                   f'id <code style="user-select:all;">{_esc(job.id)}</code> '
-                  f'&nbsp;·&nbsp; show.py row {row_no}</div>')
+                  f'&nbsp;·&nbsp; #{row_no}</div>')
 
     fit = ""
     if job.fit_summary:
