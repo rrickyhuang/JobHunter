@@ -1,7 +1,14 @@
-"""Core data model for a job posting.
+"""Core data model for a job posting — the single `Job` dataclass that defines
+what a posting is throughout the pipeline. Holds no logic, just the shape of the
+data: db.py persists these fields as SQLite columns, scrape.py builds Job objects,
+and show.py/digest.py/html_render.py read them.
 
-Adapted from the original spec for Ricky's search: org-type penalties are gone,
-and commute-from-Commercial-Broadway fields are added as a first-class concern.
+Notable, search-specific fields:
+  - org-type is informational only (no scoring penalty).
+  - Commute is two-tier: `commute_min` is a free, deterministic estimate used in
+    scoring; `commute_min_precise` is the real one-way transit time from the
+    Google Distance Matrix API, fetched lazily by commute_precise.py only for
+    jobs that reach the digest shortlist, and never fed back into scoring.
 """
 from __future__ import annotations
 

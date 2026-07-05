@@ -70,6 +70,36 @@ def group_by_qual(jobs: list) -> list[tuple[str, list]]:
     return groups
 
 
+# Application-pipeline stages that still count as "in progress": shown in a
+# compact tracker at the bottom of the digest and excluded from the "apply now"
+# groupings, so a job you've already applied to never resurfaces as a
+# suggestion. Ordered most-advanced first. Terminal stages (denied/withdrawn)
+# are dropped from the digest entirely — they're closed.
+ACTIVE_STAGES = ("offer", "interviewing", "applied")
+STAGE_LABEL = {"applied": "Applied", "interviewing": "Interviewing", "offer": "Offer"}
+_STAGE_COLOR = {"applied": "#0969da", "interviewing": "#8250df", "offer": "#1a7f37"}
+
+
+def split_by_stage(jobs: list) -> tuple[list, list]:
+    """(open_jobs, tracked): open_jobs have no application stage set (eligible
+    for the shortlist); tracked are in an active pipeline stage (for the
+    tracker). Terminal stages (denied/withdrawn) fall out of both."""
+    open_jobs = [j for j in jobs if not j.stage]
+    tracked = [j for j in jobs if j.stage in ACTIVE_STAGES]
+    return open_jobs, tracked
+
+
+def group_by_stage(tracked: list) -> list[tuple[str, str, list]]:
+    """Partition tracked jobs by stage into (stage, label, members), most
+    advanced first. Empty stages dropped."""
+    groups = []
+    for st in ACTIVE_STAGES:
+        members = [j for j in tracked if j.stage == st]
+        if members:
+            groups.append((st, STAGE_LABEL[st], members))
+    return groups
+
+
 def _esc(s) -> str:
     return html.escape(str(s)) if s is not None else ""
 
@@ -116,6 +146,9 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     new = (' <span style="background:#1a7f37;color:#fff;font-size:11px;'
            'padding:1px 6px;border-radius:10px;white-space:nowrap;">NEW</span>'
            ) if job.is_new else ""
+    saved = (' <span style="background:#bf8700;color:#fff;font-size:11px;'
+             'padding:1px 6px;border-radius:10px;white-space:nowrap;">INTERESTED</span>'
+             ) if job.saved and not job.stage else ""
 
     meta = " &nbsp;·&nbsp; ".join([
         f"<b>{_esc(job.role_type or '?')}</b>",
@@ -207,7 +240,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'margin-bottom:14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
         f'<div style="font-size:16px;font-weight:600;color:#0969da;line-height:1.35;">'
         f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
-        f'{star}{new}</div>'
+        f'{star}{new}{saved}</div>'
         f'<div style="color:#57606a;font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
         f'{dq}'
@@ -235,7 +268,40 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "") -> str:
     )
 
 
-def digest_html(primary: list, near: list, cfg: dict, row_of: dict[str, int] | None = None) -> str:
+def _tracker_row(job, row_no: int | None) -> str:
+    color = _STAGE_COLOR.get(job.stage, "#57606a")
+    when = (f' &nbsp;·&nbsp; since {job.stage_at.date().isoformat()}'
+            if job.stage_at else "")
+    rowtxt = f" &nbsp;·&nbsp; #{row_no}" if row_no is not None else ""
+    return (
+        '<div style="border:1px solid #eaeef2;border-radius:8px;padding:8px 12px;'
+        'margin-bottom:8px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
+        f'<span style="background:{color};color:#fff;font-size:11px;padding:1px 8px;'
+        f'border-radius:10px;white-space:nowrap;">{_esc(STAGE_LABEL[job.stage]).upper()}</span> '
+        f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;font-weight:600;'
+        f'font-size:14px;">{_esc(job.title)}</a> '
+        f'<span style="color:#57606a;font-size:13px;">— {_esc(job.company or "Unknown")}</span>'
+        f'<span style="color:#8b949e;font-size:12px;">{when}{rowtxt}</span></div>'
+    )
+
+
+def _tracker_html(tracked: list, row_of: dict[str, int]) -> str:
+    if not tracked:
+        return ""
+    out = ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
+           'font-size:17px;color:#24292f;margin:28px 0 6px;">'
+           f'Application pipeline <span style="color:#8b949e;font-weight:400;font-size:14px;">'
+           f'({len(tracked)})</span></h2>'
+           '<div style="color:#8b949e;font-size:13px;margin-bottom:12px;'
+           'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+           'Already in progress — kept out of the suggestions above.</div>')
+    for _st, _label, members in group_by_stage(tracked):
+        out += "".join(_tracker_row(j, row_of.get(j.id)) for j in members)
+    return out
+
+
+def digest_html(primary: list, near: list, tracked: list, cfg: dict,
+                row_of: dict[str, int] | None = None) -> str:
     row_of = row_of or {}
     thr = cfg["delivery"]["min_score_for_digest"]
     n = len(primary)
@@ -256,6 +322,7 @@ def digest_html(primary: list, near: list, cfg: dict, row_of: dict[str, int] | N
         body += ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
                  'font-size:17px;color:#24292f;margin:24px 0 12px;">Near misses (below the bar)</h2>')
         body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(near, 1))
+    body += _tracker_html(tracked, row_of)
     return page("JobHunter — Daily Shortlist", intro, body)
 
 

@@ -131,7 +131,7 @@ def main() -> None:
     conn = db.connect()
     db.init_db(conn)
     import digest
-    primary, near = digest.select(conn, cfg, refine=False)
+    primary, near, _tracked = digest.select(conn, cfg, refine=False)
     n = refine_missing(conn, primary + near, cfg)
     conn.close()
     log.info("refined %d job(s) with real transit time", n)

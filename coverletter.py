@@ -9,6 +9,16 @@ Usage:
     python coverletter.py <row-# or id>              # omits --notes: prompts
                                                        # interactively instead
                                                        # (optional, skippable)
+
+    python coverletter.py revise <row-# or id>       # iteratively tweak a saved
+                                                       # letter; prompts for each
+                                                       # change in a loop until you
+                                                       # press Enter/q to finish
+    python coverletter.py revise <row-# or id> "..."  # seed the first change, then
+                                                       # continue in the same loop
+
+Each revision overwrites the saved letter and backs up the previous version
+to <letter>.md.bak. Revisions use the same `claude` CLI (subscription, not API).
 """
 from __future__ import annotations
 
@@ -102,8 +112,88 @@ Description:
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
 
 
+def build_revision_prompt(letter: str, instruction: str) -> str:
+    return f"""You are revising an existing cover letter. Apply the requested change and return the full revised letter.
+
+=== CURRENT LETTER ===
+{letter}
+
+=== REQUESTED CHANGE ===
+{instruction.strip()}
+
+=== INSTRUCTIONS ===
+- Make ONLY the change requested. Leave every other sentence exactly as it is — same wording, same paragraphs, same order. Do not "improve" untouched parts.
+- Keep the salutation and the "Sincerely," + name signature intact unless the change is specifically about them.
+- Do not narrate the edit or add commentary. Output ONLY the full revised letter text (no markdown, no notes before or after)."""
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:60]
+
+
+def _letter_path(job) -> Path:
+    return _OUT_DIR / f"{_slug(job.company)}_{_slug(job.title)}_{job.id}.md"
+
+
+# Divides the job-info header from the letter body in a saved .md. Revisions
+# split on this so only the body is ever sent to the claude CLI.
+_HEADER_DIVIDER = "\n<!-- letter -->\n"
+
+
+def _letter_header(job) -> str:
+    lines = [
+        "<!--",
+        f"Job ID:   {job.id}",
+        f"Title:    {job.title}",
+        f"Company:  {job.company}",
+        f"Location: {job.location or 'n/a'}",
+    ]
+    if job.url:
+        lines.append(f"URL:      {job.url}")
+    lines.append(f"Drafted:  {date.today().strftime('%B %d, %Y')}")
+    lines.append("-->")
+    return "\n".join(lines)
+
+
+def _save_letter(job, body: str) -> Path:
+    """Write header + body to the job's letter file and return the path."""
+    _OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = _letter_path(job)
+    path.write_text(f"{_letter_header(job)}{_HEADER_DIVIDER}{body.strip()}\n",
+                    encoding="utf-8")
+    return path
+
+
+def _split_letter(text: str) -> tuple[str, str]:
+    """Return (header, body). Header is '' for older files without a divider."""
+    if _HEADER_DIVIDER in text:
+        header, body = text.split(_HEADER_DIVIDER, 1)
+        return header, body.strip()
+    return "", text.strip()
+
+
+def _run_claude(prompt: str) -> str:
+    """Shell out to the claude CLI; return stdout or exit with a helpful error."""
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True, text=True, encoding="utf-8",
+            stdin=subprocess.DEVNULL, timeout=180,
+        )
+    except FileNotFoundError:
+        print("\n  Couldn't find the `claude` CLI on PATH. Install Claude Code "
+              "(https://claude.com/claude-code) and make sure `claude` runs from a terminal.\n")
+        sys.exit(1)
+    except subprocess.TimeoutExpired:
+        print("\n  claude CLI timed out after 180s.\n")
+        sys.exit(1)
+
+    if result.returncode != 0 or not result.stdout.strip():
+        print(f"\n  claude CLI failed (exit {result.returncode}):\n  {result.stderr.strip()}")
+        print("  Check you're logged in: run `claude` interactively once and confirm "
+              "it starts without an auth error.\n")
+        sys.exit(1)
+    return result.stdout.strip()
 
 
 _END_SENTINEL = "END"
@@ -131,15 +221,7 @@ def _prompt_notes() -> str:
     return "\n".join(lines).strip()
 
 
-def main() -> None:
-    args = sys.argv[1:]
-    if not args:
-        print("\n  Usage: python coverletter.py <row-# or job-id> [--notes \"...\"]\n")
-        sys.exit(1)
-
-    target = args[0]
-    has_notes_flag = "--notes" in args
-
+def _resolve_or_exit(target: str):
     conn = db.connect()
     db.init_db(conn)
     job = _resolve_job(conn, target)
@@ -147,8 +229,14 @@ def main() -> None:
     if not job:
         print(f"\n  No job found for {target!r}\n")
         sys.exit(1)
+    return job
 
-    if has_notes_flag:
+
+def _generate(args: list[str]) -> None:
+    target = args[0]
+    job = _resolve_or_exit(target)
+
+    if "--notes" in args:
         i = args.index("--notes")
         notes = args[i + 1] if i + 1 < len(args) else ""
     else:
@@ -159,31 +247,67 @@ def main() -> None:
 
     print(f"\n  Drafting a cover letter for: {job.title} @ {job.company}")
     print("  Shelling out to the claude CLI (uses your subscription, not API tokens)...")
-    try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, encoding="utf-8",
-            stdin=subprocess.DEVNULL, timeout=180,
-        )
-    except FileNotFoundError:
-        print("\n  Couldn't find the `claude` CLI on PATH. Install Claude Code "
-              "(https://claude.com/claude-code) and make sure `claude` runs from a terminal.\n")
-        sys.exit(1)
-    except subprocess.TimeoutExpired:
-        print("\n  claude CLI timed out after 180s.\n")
-        sys.exit(1)
+    letter = _run_claude(prompt)
 
-    if result.returncode != 0 or not result.stdout.strip():
-        print(f"\n  claude CLI failed (exit {result.returncode}):\n  {result.stderr.strip()}")
-        print("  Check you're logged in: run `claude` interactively once and confirm "
-              "it starts without an auth error.\n")
-        sys.exit(1)
-
-    letter = result.stdout.strip()
-    _OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = _OUT_DIR / f"{_slug(job.company)}_{_slug(job.title)}_{job.id}.md"
-    path.write_text(letter, encoding="utf-8")
+    path = _save_letter(job, letter)
     print(f"\n  Saved: {path}\n")
+
+
+def _revise(args: list[str]) -> None:
+    if not args:
+        print("\n  Usage: python coverletter.py revise <row-# or job-id> [\"one-shot instruction\"]\n")
+        sys.exit(1)
+
+    job = _resolve_or_exit(args[0])
+    path = _letter_path(job)
+    if not path.exists():
+        print(f"\n  No saved letter at {path}\n  Generate it first: python coverletter.py {args[0]}\n")
+        sys.exit(1)
+
+    one_shot = args[1] if len(args) > 1 else ""
+    _, letter = _split_letter(path.read_text(encoding="utf-8"))
+    print(f"\n  Revising: {job.title} @ {job.company}")
+    print(f"  File: {path}")
+
+    while True:
+        if one_shot:
+            instruction, one_shot = one_shot, ""
+        else:
+            print("\n  Describe the change (or press Enter / 'q' to finish):")
+            try:
+                instruction = input("  > ").strip()
+            except EOFError:
+                break
+            if instruction == "" or instruction.lower() == "q":
+                break
+
+        print("  Applying via claude CLI...")
+        revised = _run_claude(build_revision_prompt(letter, instruction))
+
+        # Back up the full current file (header + body) before overwriting, then
+        # re-save with the header re-attached so revisions never touch it.
+        path.with_suffix(".md.bak").write_text(
+            path.read_text(encoding="utf-8"), encoding="utf-8")
+        _save_letter(job, revised)
+        letter = revised
+
+        print("\n  ── revised letter ──\n")
+        print(revised)
+        print(f"\n  Saved (previous version → {path.with_suffix('.md.bak').name})")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if not args:
+        print("\n  Usage:\n"
+              "    python coverletter.py <row-# or job-id> [--notes \"...\"]   # generate\n"
+              "    python coverletter.py revise <row-# or job-id> [\"...\"]     # revise a saved letter\n")
+        sys.exit(1)
+
+    if args[0] == "revise":
+        _revise(args[1:])
+    else:
+        _generate(args)
 
 
 if __name__ == "__main__":
