@@ -29,6 +29,10 @@ class Job:
     location_lng: float | None = None
     nearest_station: str | None = None
     commute_min: int | None = None   # estimated one-way door-to-door minutes
+    # Real transit time from Google Distance Matrix (minutes), fetched lazily —
+    # only for jobs that actually reach the digest shortlist, never used in
+    # scoring (stays free/deterministic). None until fetched; see commute_precise.py.
+    commute_min_precise: int | None = None
     is_remote: bool | None = None
 
     # ── Compensation (CAD) ───────────────────────────────────────────────────

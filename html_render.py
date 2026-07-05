@@ -25,6 +25,8 @@ def _esc(s) -> str:
 def _commute(j) -> str:
     if j.is_remote:
         return "Remote"
+    if j.commute_min_precise:
+        return f"~{j.commute_min_precise} min real transit ({_esc(j.nearest_station)})"
     if j.commute_min:
         return f"~{j.commute_min} min from home ({_esc(j.nearest_station)})"
     # No commute estimate: show the actual place from the posting, not the bucket.

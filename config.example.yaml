@@ -26,6 +26,11 @@ search_queries:
 # using only free geocoding (Nominatim) + the station list in transit_data.py.
 commute:
   home_station: "Your Home Station"
+  # Optional: exact home address, used only by commute_precise.py's real-
+  # transit-time refinement (door-to-door via Google, not just station-to-
+  # station). Leave unset to fall back to home_station's coords. Has zero
+  # effect on the free estimate/scoring above.
+  # home_address: "123 Your Street, Your City"
   acceptable_lines: ["Line A", "Line B"]   # transit lines whose stations count
   walk_speed_kmh: 4.8
   minutes_per_station: 2.2
@@ -38,6 +43,12 @@ commute:
     - { max_min: 9999, score: 0.15 }
   remote_score: 0.9
   unknown_location_score: 0.55
+  # Optional real-transit-time refinement (Google Distance Matrix, transit
+  # mode) for jobs that reach the digest shortlist only — never affects
+  # scoring. Needs GOOGLE_MAPS_API_KEY in .env; skipped if missing.
+  google_maps:
+    enabled: false
+    arrival_weekday_hour: 9
 
 # ── Scoring ──────────────────────────────────────────────────────────────────
 scoring:
@@ -72,12 +83,14 @@ scoring:
     admin_heavy: 0.4              # score is multiplied by this if is_admin_heavy (soft dock, not a kill)
     role_type_admin: 0.4          # same, for postings whose primary role_type is "admin"
     role_type_drafting_only: 0.4  # same, for postings whose primary role_type is "drafting_only"
-    out_of_metro: 0.4             # same, for out-of-metro on-site postings (location_normalized == "Other")
     non_full_time: 0.5            # same, for part_time/casual/on_call/seasonal/temporary postings
 
-# Nothing is hard-disqualified (score forced to 0) — every red flag above is a
-# soft multiplier penalty instead, so a job can still surface if it's a strong
-# match despite one bad signal.
+# ── Hard disqualifiers (force score to 0) ────────────────────────────────────
+# Role-type red flags above are soft penalties, not kills. Out-of-metro AND
+# on-site postings are the one exception: not commutable at all, so there's no
+# "strong fit despite it" case worth preserving.
+disqualifiers:
+  kill_if_outside_metro_and_onsite: true
 
 # ── Candidate profile (feeds the LLM enrichment prompt) ──────────────────────
 # Describe yourself here so the LLM can judge whether a posting actually fits.

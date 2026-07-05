@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import re
 
-# Cities/areas that count as "Vancouver metro" for this search.
+# Cities/areas that count as "Vancouver metro" for this search — the full
+# Metro Vancouver Regional District, not just the City of Vancouver, since
+# these are all genuinely commutable even if some rides are long.
 _METRO = [
     "vancouver", "burnaby", "new westminster", "new west", "richmond",
     "north vancouver", "west vancouver", "coquitlam", "port moody",
-    "port coquitlam", "surrey", "delta", "metro vancouver", "lower mainland",
-    "bc, canada", "british columbia",
+    "port coquitlam", "surrey", "delta", "tsawwassen", "ladner",
+    "langley", "maple ridge", "pitt meadows", "white rock",
+    "bowen island", "anmore", "belcarra", "lions bay",
+    "metro vancouver", "lower mainland", "bc, canada", "british columbia",
 ]
 _REMOTE = ["remote", "work from home", "wfh", "anywhere", "fully remote"]
 _HYBRID = ["hybrid", "flexible location", "partially remote"]

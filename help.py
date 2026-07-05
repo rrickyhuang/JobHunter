@@ -9,6 +9,7 @@ you add a flag, update that script's docstring and this reflects it for free.
 from __future__ import annotations
 
 import addjob
+import commute_precise
 import coverletter
 import dedup
 import digest
@@ -24,6 +25,7 @@ _SCRIPTS = [
     ("coverletter.py", coverletter, "Draft a cover letter for any stored job via the claude CLI."),
     ("digest.py", digest, "Build/send the ranked shortlist without re-scraping."),
     ("dedup.py", dedup, "Cross-source duplicate detection (runs automatically after every scrape)."),
+    ("commute_precise.py", commute_precise, "Optional real transit-time refinement for the digest shortlist (Google Distance Matrix)."),
 ]
 
 

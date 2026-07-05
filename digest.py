@@ -6,7 +6,9 @@
 
 Pulls from the current DB — run scrape.py first to refresh. Jobs at/above
 delivery.min_score_for_digest are the shortlist; a few near-misses are appended
-so the digest is useful even on a thin day.
+so the digest is useful even on a thin day. If commute.google_maps.enabled is
+on (config.yaml) and GOOGLE_MAPS_API_KEY is set (.env), shortlisted jobs get a
+real transit-time refinement — see commute_precise.py.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from datetime import date
 from email.message import EmailMessage
 from pathlib import Path
 
+import commute_precise
 import config
 import db
 import html_render
@@ -29,6 +32,8 @@ log = logging.getLogger("digest")
 def _commute(j) -> str:
     if j.is_remote:
         return "remote"
+    if j.commute_min_precise:
+        return f"~{j.commute_min_precise} min real transit ({j.nearest_station})"
     if j.commute_min:
         return f"~{j.commute_min} min ({j.nearest_station})"
     return j.location_normalized or "—"
@@ -81,13 +86,17 @@ def build_markdown(primary: list, near: list, cfg: dict) -> str:
     return "\n".join(out)
 
 
-def select(conn, cfg: dict) -> tuple[list, list]:
+def select(conn, cfg: dict, *, refine: bool = True) -> tuple[list, list]:
     d = cfg["delivery"]
     thr = d["min_score_for_digest"]
     cap = d.get("max_jobs_in_digest", 25)
-    ranked = db.query(conn, order_by="score DESC")  # excludes dismissed
+    ranked = db.query(conn, order_by="score DESC")  # excludes dismissed/duplicates
     primary = [j for j in ranked if j.score >= thr][:cap]
     near = [j for j in ranked if 0 < j.score < thr][:5] if len(primary) < 5 else []
+    if refine:
+        # Real transit time only for jobs that actually made the shortlist —
+        # see commute_precise.py for why this never touches scoring.
+        commute_precise.refine_missing(conn, primary + near, cfg)
     return primary, near
 
 

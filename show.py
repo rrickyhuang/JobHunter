@@ -60,6 +60,11 @@ def _fmt_salary(j) -> str:
 def _fmt_commute(j) -> str:
     if j.is_remote:
         return "remote"
+    if j.commute_min_precise:
+        precise = f"~{j.commute_min_precise} min real transit (via {j.nearest_station})"
+        if j.commute_min and j.commute_min != j.commute_min_precise:
+            precise += f" [estimate was ~{j.commute_min}]"
+        return precise
     if j.commute_min:
         return f"~{j.commute_min} min from home (via {j.nearest_station})"
     place = j.location or j.location_normalized or "n/a"
@@ -165,7 +170,9 @@ def _status_line(job) -> str:
 def detail_view(job, index: int | None = None, full: bool = False) -> None:
     bd = job.score_breakdown if isinstance(job.score_breakdown, dict) else {}
     print(f"\n  {job.title}")
-    print(f"  {job.company}  ·  {job.source}" + (f"  ·  #{index}" if index is not None else ""))
+    print(f"  {job.company}  ·  {job.source}"
+          + (f"  ·  #{index}" if index is not None else "")
+          + f"  ·  id={job.id}")
     print(f"  {job.url}")
     print("  " + "─" * 78)
     print(f"  score        {job.score:.2f} {_bar(job.score)}")
