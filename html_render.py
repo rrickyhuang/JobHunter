@@ -190,16 +190,14 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         if report:
             inner = _esc(job.fit_summary)
         else:
-            # Digest: lead with the verdict sentence, tuck the rest behind a
-            # <details>. Email clients that ignore <details> just show it all
-            # (same as before) — graceful, no lost text.
+            # Digest: lead with the verdict sentence in normal weight, then the
+            # rest as dimmer, smaller supporting text. No <details> — email
+            # clients (Gmail) strip the toggle and leak the literal "more".
             lead, rest = lead_sentence(job.fit_summary)
             inner = _esc(lead)
             if rest:
-                inner += (f'<details style="margin-top:4px;"><summary style="cursor:pointer;'
-                          f'color:#0969da;font-size:12px;">more</summary>'
-                          f'<div style="margin-top:4px;color:#57606a;font-size:13px;">'
-                          f'{_esc(rest)}</div></details>')
+                inner += (f'<div style="margin-top:4px;color:#8b949e;font-size:13px;">'
+                          f'{_esc(rest)}</div>')
         fit = (f'<div style="margin-top:8px;color:#24292f;font-size:14px;'
                f'border-left:3px solid #d0d7de;padding-left:10px;">{inner}</div>')
 
