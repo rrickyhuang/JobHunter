@@ -17,15 +17,16 @@ Usage:
     python coverletter.py revise <row-# or id> "..."  # seed the first change, then
                                                        # continue in the same loop
 
-Each revision overwrites the saved letter and backs up the previous version
-to <letter>.md.bak. Revisions use the same `claude` CLI (subscription, not API).
+Each revision overwrites the saved letter and archives the previous version,
+timestamped, under digests/cover_letters/backups/ (every revision is kept).
+Revisions use the same `claude` CLI (subscription, not API).
 """
 from __future__ import annotations
 
 import re
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import config
@@ -33,6 +34,7 @@ import db
 from enrichment import _profile_block
 
 _OUT_DIR = Path(__file__).with_name("digests") / "cover_letters"
+_BAK_DIR = _OUT_DIR / "backups"
 
 
 def _resolve_job(conn, target: str):
@@ -284,16 +286,19 @@ def _revise(args: list[str]) -> None:
         print("  Applying via claude CLI...")
         revised = _run_claude(build_revision_prompt(letter, instruction))
 
-        # Back up the full current file (header + body) before overwriting, then
-        # re-save with the header re-attached so revisions never touch it.
-        path.with_suffix(".md.bak").write_text(
-            path.read_text(encoding="utf-8"), encoding="utf-8")
+        # Archive the full current file (header + body) into backups/ with a
+        # timestamp so every revision is kept, then re-save with the header
+        # re-attached so revisions never touch it.
+        _BAK_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bak = _BAK_DIR / f"{path.stem}_{stamp}.md"
+        bak.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         _save_letter(job, revised)
         letter = revised
 
         print("\n  ── revised letter ──\n")
         print(revised)
-        print(f"\n  Saved (previous version → {path.with_suffix('.md.bak').name})")
+        print(f"\n  Saved (previous version archived → backups/{bak.name})")
 
 
 def main() -> None:
