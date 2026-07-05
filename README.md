@@ -28,8 +28,10 @@ Sources ─▶ Parse/Normalize ─▶ LLM enrich ─▶ Dedup ─▶ Score ─�
   the things keywords miss: design autonomy, whether the role genuinely mixes
   design with coordination, admin-heaviness, etc.
 - **Score** — a weighted, configurable model. Commute and genuine design-role fit
-  lead by default. Red flags (pure admin/drafting, out-of-metro on-site, etc.)
-  are soft multiplier penalties, not hard zeros, so a strong match can still surface.
+  lead by default. Role-type red flags (pure admin/drafting) are soft multiplier
+  penalties, not hard zeros, so a strong match can still surface. Out-of-metro,
+  on-site postings are still a hard disqualifier (score forced to 0) since
+  there's no "strong fit despite it" case for a job that isn't commutable at all.
 - **Digest** — a ranked markdown file and/or an emailed shortlist.
 
 ## Setup
@@ -73,7 +75,8 @@ Everything tunable lives in `config.yaml`:
 - `search_queries` — keywords, location, exclusions
 - `commute` — home station, acceptable transit lines, time→score buckets
 - `scoring.weights` — relative importance of each factor
-- `scoring.penalties` — soft multiplier docks for red flags (admin, drafting-only, out-of-metro, etc.)
+- `scoring.penalties` — soft multiplier docks for role-type red flags (admin, drafting-only, etc.)
+- `disqualifiers` — the one remaining hard filter: out-of-metro, on-site postings
 - `profile` — a description of the candidate, fed to the LLM enrichment prompt
 - `delivery` — markdown / email options and score thresholds
 
