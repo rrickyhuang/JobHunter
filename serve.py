@@ -20,6 +20,7 @@ import logging
 from flask import Flask, abort, request
 
 import config
+import coverletter
 import db
 import html_render
 import logutil
@@ -37,8 +38,9 @@ _BTN_ON = _BTN + "background:#0969da;color:#fff;border-color:#0969da;"
 
 def _actions_html(job) -> str:
     """The inline control bar appended inside a card: one button per stage plus
-    interested / dismiss toggles. Each posts to a route that flips state and
-    returns the freshly rendered card, which HTMX swaps in place."""
+    interested / dismiss toggles, and a lazily-loaded cover-letter panel. Each
+    posts to a route that flips state and returns the freshly rendered card,
+    which HTMX swaps in place."""
     hx = ('hx-target="#job-{id}" hx-swap="outerHTML" '
           'hx-post="/job/{id}/{path}"').format
     stage_btns = "".join(
@@ -52,12 +54,70 @@ def _actions_html(job) -> str:
                   f'{hx(id=job.id, path="interested")}>Interested</button>')
     dismiss = (f'<button style="{_BTN_ON if job.dismissed else _BTN}" '
                f'{hx(id=job.id, path="dismiss")}>Dismiss</button>')
+
+    has_letter = coverletter.letter_path(job).exists()
+    cl_label = "✓ Cover letter" if has_letter else "Cover letter"
+    cl_btn = (f'<button style="{_BTN_ON if has_letter else _BTN}" '
+              f'hx-get="/job/{job.id}/coverletter" hx-target="#cl-{job.id}" '
+              f'hx-swap="innerHTML">{cl_label}</button>')
     return (
         '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eaeef2;">'
         f'{stage_btns}{clear}'
         '<span style="display:inline-block;width:12px;"></span>'
-        f'{interested}{dismiss}</div>'
+        f'{interested}{dismiss}'
+        '<span style="display:inline-block;width:12px;"></span>'
+        f'{cl_btn}'
+        f'<div id="cl-{job.id}"></div></div>'
     )
+
+
+# ── Cover-letter panel (lazily loaded into #cl-<id> on demand) ────────────────
+_CL_INPUT = ("width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid "
+             "#d0d7de;border-radius:6px;font-size:13px;font-family:inherit;")
+_CL_WORKING = ('<span class="htmx-indicator" style="color:#8250df;font-size:12px;'
+               'margin-left:8px;">working… (up to ~60s)</span>')
+
+
+def _cl_draft_form(job) -> str:
+    return (
+        '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
+        'border-radius:8px;padding:12px;">'
+        f'<form hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        f'<textarea name="notes" rows="2" placeholder="Optional: specific points '
+        f'to work into this letter…" style="{_CL_INPUT}"></textarea>'
+        f'<div style="margin-top:6px;"><button style="{_BTN_ON}">Draft cover letter'
+        f'</button>{_CL_WORKING}</div></form></div>'
+    )
+
+
+def _cl_view(job, body: str) -> str:
+    from markupsafe import escape
+    path = coverletter.letter_path(job)
+    return (
+        '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
+        'border-radius:8px;padding:12px;">'
+        f'<div style="font-size:12px;color:#57606a;margin-bottom:6px;">saved: '
+        f'<code style="user-select:all;">{escape(str(path))}</code></div>'
+        f'<pre style="white-space:pre-wrap;font-family:-apple-system,Segoe UI,Roboto,'
+        f'sans-serif;font-size:13px;line-height:1.5;color:#24292f;margin:0 0 10px;'
+        f'max-height:420px;overflow:auto;">{escape(body)}</pre>'
+        f'<form hx-post="/job/{job.id}/coverletter/revise" hx-target="#cl-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        f'<input name="instruction" placeholder="Describe a change to make…" '
+        f'style="{_CL_INPUT}">'
+        f'<div style="margin-top:6px;"><button style="{_BTN_ON}">Revise</button>'
+        f'{_CL_WORKING}</div></form></div>'
+    )
+
+
+def _cl_panel(job, error: str = "") -> str:
+    from markupsafe import escape
+    banner = (f'<div style="margin-top:10px;background:#ffebe9;border:1px solid '
+              f'#ff818266;border-radius:8px;padding:10px;color:#82071e;font-size:13px;">'
+              f'{escape(error)}</div>') if error else ""
+    body = coverletter.letter_body(job)
+    return banner + (_cl_view(job, body) if body is not None else _cl_draft_form(job))
 
 
 def _card(job, row_no: int) -> str:
@@ -107,7 +167,9 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                 + f'<div id="cards">{cards}</div>'
                 + html_render._SCRIPT)
         conn.close()
-        head = '<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
+        head = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
+                '<style>.htmx-indicator{display:none}'
+                '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>')
         return html_render.page("JobHunter — Cockpit", intro, body, head_extra=head)
 
     @app.route("/job/<job_id>/stage/<stage>", methods=["POST"])
@@ -148,6 +210,45 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         row_no = _row_no(conn, job_id)
         conn.close()
         return _card(job, row_no)
+
+    @app.route("/job/<job_id>/coverletter")
+    def cl_panel(job_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        return _cl_panel(job)
+
+    @app.route("/job/<job_id>/coverletter/draft", methods=["POST"])
+    def cl_draft(job_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        notes = request.form.get("notes", "")
+        try:
+            path = coverletter.draft_letter(job, config.load_config(), notes)
+        except coverletter.CoverLetterError as e:
+            log.warning("cover-letter draft failed for %s: %s", job_id, e)
+            return _cl_panel(job, error=str(e))
+        log.info("drafted cover letter for %s (%s @ %s) -> %s",
+                 job_id, job.title, job.company, path)
+        return _cl_panel(job)
+
+    @app.route("/job/<job_id>/coverletter/revise", methods=["POST"])
+    def cl_revise(job_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        instruction = request.form.get("instruction", "").strip()
+        if not instruction:
+            return _cl_panel(job)
+        try:
+            coverletter.revise_letter(job, instruction)
+        except coverletter.CoverLetterError as e:
+            log.warning("cover-letter revise failed for %s: %s", job_id, e)
+            return _cl_panel(job, error=str(e))
+        log.info("revised cover letter for %s (%s @ %s): %s",
+                 job_id, job.title, job.company, instruction)
+        return _cl_panel(job)
 
     return app
 

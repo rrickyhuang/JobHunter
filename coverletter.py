@@ -175,8 +175,15 @@ def _split_letter(text: str) -> tuple[str, str]:
     return "", text.strip()
 
 
-def _run_claude(prompt: str) -> str:
-    """Shell out to the claude CLI; return stdout or exit with a helpful error."""
+class CoverLetterError(Exception):
+    """A cover-letter step failed for a reason worth showing the user (claude
+    CLI missing / not logged in / timed out / no saved letter yet). Callers that
+    aren't a terminal (e.g. the web UI) catch this instead of exiting."""
+
+
+def run_claude(prompt: str) -> str:
+    """Shell out to the claude CLI; return stdout or raise CoverLetterError with
+    a user-facing message. Used by both the CLI and the web UI."""
     try:
         result = subprocess.run(
             ["claude", "-p", prompt],
@@ -184,19 +191,64 @@ def _run_claude(prompt: str) -> str:
             stdin=subprocess.DEVNULL, timeout=180,
         )
     except FileNotFoundError:
-        print("\n  Couldn't find the `claude` CLI on PATH. Install Claude Code "
-              "(https://claude.com/claude-code) and make sure `claude` runs from a terminal.\n")
-        sys.exit(1)
+        raise CoverLetterError(
+            "Couldn't find the `claude` CLI on PATH. Install Claude Code "
+            "(https://claude.com/claude-code) and make sure `claude` runs from a terminal.")
     except subprocess.TimeoutExpired:
-        print("\n  claude CLI timed out after 180s.\n")
-        sys.exit(1)
+        raise CoverLetterError("claude CLI timed out after 180s.")
 
     if result.returncode != 0 or not result.stdout.strip():
-        print(f"\n  claude CLI failed (exit {result.returncode}):\n  {result.stderr.strip()}")
-        print("  Check you're logged in: run `claude` interactively once and confirm "
-              "it starts without an auth error.\n")
-        sys.exit(1)
+        raise CoverLetterError(
+            f"claude CLI failed (exit {result.returncode}): "
+            f"{result.stderr.strip()[:400] or 'no output'}. "
+            "Check you're logged in — run `claude` interactively once and confirm "
+            "it starts without an auth error.")
     return result.stdout.strip()
+
+
+def _run_claude(prompt: str) -> str:
+    """CLI wrapper: same as run_claude but prints the error and exits, matching
+    the terminal UX the rest of this module's CLI paths expect."""
+    try:
+        return run_claude(prompt)
+    except CoverLetterError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
+
+
+def letter_path(job) -> Path:
+    """Public path to a job's saved letter (may not exist yet)."""
+    return _letter_path(job)
+
+
+def letter_body(job) -> str | None:
+    """The saved letter's body (header stripped), or None if not drafted yet."""
+    path = _letter_path(job)
+    if not path.exists():
+        return None
+    _, body = _split_letter(path.read_text(encoding="utf-8"))
+    return body
+
+
+def draft_letter(job, cfg: dict, notes: str = "") -> Path:
+    """Draft + save a letter, returning its path. Raises CoverLetterError."""
+    letter = run_claude(build_prompt(job, cfg, notes))
+    return _save_letter(job, letter)
+
+
+def revise_letter(job, instruction: str) -> Path:
+    """Apply one revision to the saved letter (archiving the prior version),
+    returning its path. Raises CoverLetterError if there's no letter yet."""
+    path = _letter_path(job)
+    if not path.exists():
+        raise CoverLetterError("No saved letter to revise yet — draft one first.")
+    _, letter = _split_letter(path.read_text(encoding="utf-8"))
+    revised = run_claude(build_revision_prompt(letter, instruction))
+    _BAK_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    (_BAK_DIR / f"{path.stem}_{stamp}.md").write_text(
+        path.read_text(encoding="utf-8"), encoding="utf-8")
+    return _save_letter(job, revised)
 
 
 _END_SENTINEL = "END"
