@@ -165,8 +165,11 @@ _BOARD_MOVES = [
     ("interviewing", "Interviewing"), ("offer", "Offer"),
     ("denied", "Denied"), ("withdrawn", "Withdrawn"), ("remove", "Remove"),
 ]
-_COL_STYLE = ("flex:1;min-width:230px;background:#f6f8fa;border:1px solid #d0d7de;"
-              "border-radius:10px;padding:10px;margin:0 6px 12px;")
+# Fixed-width columns (no grow/shrink) so they sit side by side like a real
+# kanban; the row itself scrolls horizontally when they don't all fit (desktop
+# overflow / mobile).
+_COL_STYLE = ("flex:0 0 264px;background:#f6f8fa;border:1px solid #d0d7de;"
+              "border-radius:10px;padding:10px;")
 
 
 def _board_card(job) -> str:
@@ -207,7 +210,11 @@ def _board_html(conn) -> str:
             f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span></div>'
             f'{cards}</div>'
         )
-    return f'<div style="display:flex;flex-wrap:wrap;align-items:flex-start;">{cols}</div>'
+    return (
+        '<div style="display:flex;flex-wrap:nowrap;align-items:flex-start;gap:12px;'
+        'overflow-x:auto;padding-bottom:10px;">'
+        f'{cols}</div>'
+    )
 
 
 def _nav(active: str) -> str:
@@ -271,7 +278,10 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         body = _nav("board") + f'<div id="board">{_board_html(conn)}</div>'
         conn.close()
         intro = "Your application pipeline — click a button on a card to move it."
-        return html_render.page("JobHunter — Pipeline", intro, body, head_extra=_HEAD)
+        # Wider container so the 5 columns sit side by side on desktop; the board
+        # row scrolls horizontally when they don't fit (e.g. on a phone).
+        return html_render.page("JobHunter — Pipeline", intro, body,
+                                head_extra=_HEAD, max_width=1400)
 
     @app.route("/board/job/<job_id>/move/<target>", methods=["POST"])
     def board_move(job_id, target):

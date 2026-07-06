@@ -287,13 +287,14 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     )
 
 
-def page(title: str, intro: str, body: str, *, head_extra: str = "") -> str:
+def page(title: str, intro: str, body: str, *, head_extra: str = "",
+         max_width: int = 760) -> str:
     return (
         f'<!doctype html><html><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>{_esc(title)}</title>{head_extra}</head>'
         f'<body style="margin:0;background:#f6f8fa;padding:20px;">'
-        f'<div style="max-width:760px;margin:0 auto;">'
+        f'<div style="max-width:{max_width}px;margin:0 auto;">'
         f'<h1 style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
         f'font-size:22px;color:#24292f;margin:0 0 4px;">{_esc(title)}</h1>'
         f'<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
