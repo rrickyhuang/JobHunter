@@ -142,7 +142,11 @@ def _bar(score: float) -> str:
 
 
 def job_card(job, rank: int | None = None, *, full_desc: bool = False,
-             report: bool = False, row_no: int | None = None) -> str:
+             report: bool = False, row_no: int | None = None,
+             dom_id: str | None = None, actions_html: str = "") -> str:
+    """Render one job card. `dom_id` sets the outer div's id (so the web UI can
+    target it for HTMX swaps) and `actions_html` is appended inside the card
+    (the web UI's status controls) — both no-ops for the email/report paths."""
     title = _esc(job.title)
     if rank is not None:
         title = f"{rank}. {title}"
@@ -231,8 +235,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
                f'duplicate posting</span></div>')
 
-    # data-* attributes + class so the report script can filter on them.
-    attrs = ' style="'
+    # data-* attributes + class so the report/web-UI script can filter on them.
     data = ""
     if report:
         searchable = _esc(" ".join(filter(None, [
@@ -243,9 +246,10 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                 f'data-stage="{_esc(job.stage or "")}" '
                 f'data-dq="{1 if job.disqualifier else 0}" '
                 f'data-dup="{1 if job.duplicate_of else 0}" data-score="{job.score:.4f}"')
+    id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
     return (
-        f'<div{data} style="border:1px solid #d0d7de;border-radius:10px;padding:14px 16px;'
+        f'<div{id_attr}{data} style="border:1px solid #d0d7de;border-radius:10px;padding:14px 16px;'
         f'margin-bottom:14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
         f'<div style="font-size:16px;font-weight:600;color:#0969da;line-height:1.35;">'
         f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
@@ -255,7 +259,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'{dq}'
         f'<div style="margin:6px 0;">{_bar(job.score)}</div>'
         f'<div style="color:#57606a;font-size:13px;">{meta}</div>'
-        f'{qual_html}{fit}{desc}</div>'
+        f'{qual_html}{fit}{desc}{actions_html}</div>'
     )
 
 

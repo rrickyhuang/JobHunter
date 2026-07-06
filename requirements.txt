@@ -9,3 +9,4 @@ python-dotenv
 geopy
 anthropic
 python-jobspy
+flask
