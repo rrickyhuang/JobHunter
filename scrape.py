@@ -8,6 +8,8 @@ Usage:
     python scrape.py --reenrich            force fresh Haiku enrichment on every stored job, then rescore
                                             (costs an API call per job — use after adding an enrichment field)
     python scrape.py --dedup               re-run cross-source duplicate detection only (no scraping)
+    python scrape.py --all --dry-run       scrape + score, but write nothing and call no LLM;
+                                            print a ranked preview of what a real run would store
     python scrape.py --backup              snapshot jobs.db to backups/ and exit
 
 Every --all/--source scrape re-runs dedup.py at the end automatically (so the
@@ -135,13 +137,17 @@ def _apply_enrichment(job: Job, data: dict) -> None:
     job.enriched = True
 
 
-def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False) -> None:
+def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False,
+                  allow_api: bool = True) -> None:
     existing = None if force else db.get(conn, job.id)
     if existing and existing.enriched:
         # Reuse prior enrichment — daily re-runs only pay for genuinely new jobs.
         for k in (*_ENRICH_FIELDS, "role_type", "org_type", "org_size"):
             setattr(job, k, getattr(existing, k))
         job.enriched = True
+        return
+    if not allow_api:
+        # Dry run: never hit the API; a new job just goes unenriched in the preview.
         return
     if not _should_enrich(job, cfg):
         return
@@ -151,10 +157,11 @@ def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False
         stats["enriched"] += 1
 
 
-def run(sources: list[str], cfg: dict) -> dict:
+def run(sources: list[str], cfg: dict, *, dry_run: bool = False) -> dict:
     conn = db.connect()
     db.init_db(conn)
     stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0, "duplicates": 0}
+    previews: list[tuple[bool, Job]] = []
     for name in sources:
         fetch = SOURCES.get(name)
         if not fetch:
@@ -169,13 +176,19 @@ def run(sources: list[str], cfg: dict) -> dict:
         for raw in raws:
             stats["fetched"] += 1
             job = raw_to_job(raw, cfg)
-            _maybe_enrich(conn, job, cfg, stats)
+            _maybe_enrich(conn, job, cfg, stats, allow_api=not dry_run)
             job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
-            is_new = db.upsert(conn, job)
+            if dry_run:
+                is_new = db.get(conn, job.id) is None
+                previews.append((is_new, job))
+            else:
+                is_new = db.upsert(conn, job)
             stats["new" if is_new else "updated"] += 1
-    dedup_stats = dedup.run(conn, cfg)
-    stats["duplicates"] = dedup_stats["duplicates"]
+    if not dry_run:
+        dedup_stats = dedup.run(conn, cfg)
+        stats["duplicates"] = dedup_stats["duplicates"]
     conn.close()
+    stats["previews"] = previews
     return stats
 
 
@@ -215,6 +228,40 @@ def reenrich(cfg: dict) -> dict:
     return stats
 
 
+def _enrich_state(job: Job, cfg: dict) -> str:
+    """How enrichment would resolve for this job on a real run."""
+    if job.enriched:
+        return "cached"
+    if _should_enrich(job, cfg):
+        return "would-call"
+    return "skip"
+
+
+def _print_dry_run(stats: dict, cfg: dict) -> None:
+    """Print a ranked preview of what a real scrape would have stored — no DB
+    writes, no LLM calls. Uses cached enrichment where available so scores match
+    what a real run would produce (minus enrichment for genuinely new jobs)."""
+    previews = stats["previews"]
+    rows = sorted(previews, key=lambda t: t[1].score, reverse=True)
+    print(f"\nDRY RUN - {len(rows)} job(s) fetched, nothing written to the DB.\n")
+    header = (f"{'score':>5}  {'new':<3}  {'enrich':<10}  {'qual':<12}  "
+              f"{'role_type':<16}  {'source':<16}  {'company':<22}  title")
+    print(header)
+    print("-" * len(header))
+    for is_new, job in rows:
+        flag = "NEW" if is_new else ""
+        dq = "  [DQ]" if job.disqualifier else ""
+        company = (job.company or "")[:22]
+        title = (job.title or "")[:40]
+        print(f"{job.score:5.2f}  {flag:<3}  {_enrich_state(job, cfg):<10}  "
+              f"{(job.qualification or '-'):<12}  {(job.role_type or '-'):<16}  "
+              f"{job.source:<16}  {company:<22}  {title}{dq}")
+    would_enrich = sum(1 for _, j in previews if _enrich_state(j, cfg) == "would-call")
+    print(f"\nSummary: fetched={stats['fetched']} would-be-new={stats['new']} "
+          f"would-update={stats['updated']} would-call-LLM={would_enrich}")
+    print("(dry run: no DB write, no dedup, no backup, no digest, no LLM calls)")
+
+
 def _refresh_html_report(cfg: dict) -> None:
     """Regenerate digests/report.html so it never goes stale between manual
     `show.py --html` runs. Cheap (no network calls), so safe to run after
@@ -242,6 +289,9 @@ def main() -> None:
                     help="re-run cross-source duplicate detection only (no scraping)")
     ap.add_argument("--digest", action="store_true",
                     help="build + deliver the digest after scraping")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="scrape + score but write nothing and call no LLM; "
+                         "print a ranked preview of what a real run would store")
     ap.add_argument("--backup", action="store_true",
                     help="snapshot jobs.db to backups/ and exit (no scraping)")
     args = ap.parse_args()
@@ -280,6 +330,13 @@ def main() -> None:
         sources = list(SOURCES.keys())
     else:
         sources = [s for s in enabled if s in SOURCES] or list(SOURCES.keys())
+
+    if args.dry_run:
+        if args.digest:
+            log.warning("--digest ignored under --dry-run (nothing is stored)")
+        stats = run(sources, cfg, dry_run=True)
+        _print_dry_run(stats, cfg)
+        return
 
     stats = run(sources, cfg)
     log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d "
