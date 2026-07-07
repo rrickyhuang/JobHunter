@@ -269,6 +269,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                 f'data-stage="{_esc(job.stage or "")}" '
                 f'data-dq="{1 if job.disqualifier else 0}" '
                 f'data-dup="{1 if job.duplicate_of else 0}" '
+                f'data-dismissed="{1 if job.dismissed else 0}" '
                 f'data-stale="{1 if stale else 0}" data-score="{job.score:.4f}"')
     id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
@@ -392,6 +393,8 @@ def _filter_bar(jobs: list) -> str:
         '<input type="checkbox" id="fdup" onchange="applyFilters()"> show duplicates</label>'
         '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fstale" onchange="applyFilters()"> show stale</label>'
+        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        '<input type="checkbox" id="fdismissed" onchange="applyFilters()"> show dismissed</label>'
         '<span id="count" style="font-size:13px;color:#57606a;margin-left:auto;"></span>'
         '</div>'
     )
@@ -407,6 +410,7 @@ function applyFilters(){
   var showdq=document.getElementById('fdq').checked;
   var showdup=document.getElementById('fdup').checked;
   var showstale=document.getElementById('fstale').checked;
+  var showdismissed=document.getElementById('fdismissed').checked;
   var n=0;
   document.querySelectorAll('.job-card').forEach(function(c){
     var ok=true;
@@ -418,6 +422,7 @@ function applyFilters(){
     if(!showdq && c.dataset.dq==='1') ok=false;
     if(!showdup && c.dataset.dup==='1') ok=false;
     if(!showstale && c.dataset.stale==='1') ok=false;
+    if(!showdismissed && c.dataset.dismissed==='1') ok=false;
     c.style.display = ok ? '' : 'none';
     if(ok) n++;
   });
@@ -434,7 +439,7 @@ def report_html(jobs: list, cfg: dict) -> str:
     dup = len([j for j in jobs if j.duplicate_of])
     stale = len([j for j in jobs if is_stale(j, stale_days)])
     intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates · {stale} stale "
-             f"— search and filter below; disqualified/duplicates/stale hidden until you "
+             f"— search and filter below; disqualified/duplicates/stale/dismissed hidden until you "
              f"toggle them on")
     cards = "".join(job_card(j, i, full_desc=True, report=True, row_no=i, stale_days=stale_days)
                     for i, j in enumerate(jobs, 1))

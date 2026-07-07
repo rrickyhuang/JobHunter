@@ -96,10 +96,16 @@ _CL_WORKING = ('<span class="htmx-indicator" style="color:#8250df;font-size:12px
                'margin-left:8px;">working… (up to ~60s)</span>')
 
 
+def _cl_close_btn(job) -> str:
+    return (f'<button type="button" style="{_BTN}float:right;" '
+            f'onclick="document.getElementById(\'cl-{job.id}\').innerHTML=\'\'">Hide</button>')
+
+
 def _cl_draft_form(job) -> str:
     return (
         '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
         'border-radius:8px;padding:12px;">'
+        f'{_cl_close_btn(job)}'
         f'<form hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
         f'hx-swap="innerHTML" hx-disabled-elt="find button">'
         f'<textarea name="notes" rows="2" placeholder="Optional: specific points '
@@ -115,8 +121,10 @@ def _cl_view(job, body: str) -> str:
     return (
         '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
         'border-radius:8px;padding:12px;">'
+        f'{_cl_close_btn(job)}'
         f'<div style="font-size:12px;color:#57606a;margin-bottom:6px;">saved: '
-        f'<code style="user-select:all;">{escape(str(path))}</code></div>'
+        f'<code style="user-select:all;word-break:break-all;overflow-wrap:anywhere;">'
+        f'{escape(str(path))}</code></div>'
         f'<pre style="white-space:pre-wrap;font-family:-apple-system,Segoe UI,Roboto,'
         f'sans-serif;font-size:13px;line-height:1.5;color:#24292f;margin:0 0 10px;'
         f'max-height:420px;overflow:auto;">{escape(body)}</pre>'
