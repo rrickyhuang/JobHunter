@@ -138,6 +138,9 @@ dedup:
     - municipal_taleo
     - pibc
     - csla
+    - jobbank
+    - bcjobs
+    - eluta
     - indeed
     - linkedin
 
@@ -181,6 +184,9 @@ sources:
   port_moody: true         # Govstack/njoyn board
   coquitlam: true          # Cegid/Talentsoft board embedded on the homepage
   concrete_cashmere: true  # small Vancouver interior design-build studio (firm-direct)
+  jobbank: true            # Job Bank (jobbank.gc.ca), Government of Canada — national board
+  bcjobs: true             # BCJobs.ca — hits its public JSON API directly
+  eluta: false             # Eluta.ca — reCAPTCHA bot-wall after ~10 req/run; off by default, see source_eluta.py
 
 # Direct firm careers pages to scrape, e.g.:
 #   - { name: "Some Studio", careers_url: "https://example.com/careers" }

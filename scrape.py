@@ -49,12 +49,16 @@ log = logging.getLogger("scrape")
 from scrapers import (
     source_indeed, source_linkedin, source_pibc, source_csla, source_vancouver,
     source_municipal_taleo, source_north_shore, source_port_moody,
-    source_coquitlam, source_concrete_cashmere,
+    source_coquitlam, source_concrete_cashmere, source_jobbank, source_eluta,
+    source_bcjobs,
 )
 
 SOURCES = {
     "pibc": source_pibc.fetch,
     "csla": source_csla.fetch,
+    "jobbank": source_jobbank.fetch,
+    "eluta": source_eluta.fetch,
+    "bcjobs": source_bcjobs.fetch,
     "indeed": source_indeed.fetch,       # via JobSpy — see scrapers/_jobspy_common.py
     "linkedin": source_linkedin.fetch,   # via JobSpy — see scrapers/_jobspy_common.py
     "vancouver_gov": source_vancouver.fetch,
