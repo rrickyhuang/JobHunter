@@ -3,6 +3,11 @@ addjob.py) by shelling out to the `claude` CLI — this runs under your Claude
 Code subscription/plan rather than metered Anthropic API tokens, unlike the
 Haiku enrichment calls elsewhere in this pipeline.
 
+Every draft (CLI or web cockpit) gets a second, fresh-context `claude -p` call
+that critiques it against the job posting (missed keywords, generic framing,
+unverified claims) before it's saved; if the critique flags anything, one more
+call revises the letter against that feedback. See draft_letter().
+
 Usage:
     python coverletter.py <row-#-from-show.py-or-job-id>
     python coverletter.py <row-# or id> --notes "specific points to include"
@@ -113,6 +118,32 @@ Description:
 - Do NOT offer to send, share, or attach a resume, portfolio, references, or work samples, and don't mention them at all — assume the resume and portfolio are already attached to the application. The closing should simply express interest in talking further and thank them for their time.
 - Write like a real, specific person, not a generic AI assistant. The voice sample is your guide for that. Avoid these tells: meta-commentary addressed to the reader about your own doubts or honesty; hedges like "more than you might expect" or "you might be wondering"; hollow openers like "In today's world/landscape"; and a closing paragraph that just restates everything already said.
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
+
+
+_CRITIQUE_PASS_SENTINEL = "NO CHANGES NEEDED"
+
+
+def build_critique_prompt(job, letter: str) -> str:
+    return f"""You are a skeptical hiring manager reviewing a cover letter against the job posting it's responding to. Be specific and unsparing — this letter will be sent as-is unless you flag something.
+
+=== JOB POSTING ===
+Title: {job.title}
+Company: {job.company}
+Description:
+{(job.description or "")[:3000]}
+
+=== DRAFT COVER LETTER ===
+{letter}
+
+=== YOUR TASK ===
+Check for:
+- Keywords/requirements from the posting that the letter ignores despite the candidate plausibly having relevant experience for them.
+- Weak, generic, or boilerplate framing that could apply to any job/company.
+- Claims the letter makes that aren't grounded in anything the posting or the letter itself establishes (unverifiable or invented specifics).
+
+If the letter has none of these problems, respond with exactly "{_CRITIQUE_PASS_SENTINEL}" and nothing else.
+
+Otherwise, respond with a short, concrete list of fixes — each one an instruction specific enough to act on directly (e.g. "Paragraph 2 doesn't mention the posting's emphasis on public engagement — work in the candidate's community-workshop experience" rather than "make it more specific"). Do not rewrite the letter yourself. Do not comment on anything not covered above."""
 
 
 def build_revision_prompt(letter: str, instruction: str) -> str:
@@ -231,8 +262,20 @@ def letter_body(job) -> str | None:
 
 
 def draft_letter(job, cfg: dict, notes: str = "") -> Path:
-    """Draft + save a letter, returning its path. Raises CoverLetterError."""
+    """Draft + save a letter, returning its path. Raises CoverLetterError.
+
+    A second `claude -p` call (fresh context) critiques the draft against the
+    job posting before it's saved; if it flags concrete issues, one more call
+    applies that critique as a revision. A critique-call failure shouldn't
+    block presenting an otherwise-good draft, so it's caught rather than
+    raising CoverLetterError."""
     letter = run_claude(build_prompt(job, cfg, notes))
+    try:
+        critique = run_claude(build_critique_prompt(job, letter))
+    except CoverLetterError:
+        critique = _CRITIQUE_PASS_SENTINEL
+    if _CRITIQUE_PASS_SENTINEL not in critique.upper():
+        letter = run_claude(build_revision_prompt(letter, critique))
     return _save_letter(job, letter)
 
 
