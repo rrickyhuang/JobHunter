@@ -122,31 +122,52 @@ def _section_html(label: str, jobs: list, card_fn) -> str:
     )
 
 
-def bucketed_cards_html(jobs: list, card_fn) -> str:
-    """Render `jobs` as cards grouped into the same apply-now/stretch/reach
-    buckets as the email digest (via group_by_qual), each under a heading with
-    a count, so apply-now jobs float above stretch/reach/unclassified ones
-    instead of a flat score sort. `card_fn(job)` renders one card's HTML.
+def _is_open(job) -> bool:
+    return not job.stage and not job.disqualifier and not job.duplicate_of
 
-    Mirrors the digest's scope too: only pass it *open* jobs (no stage set,
-    not disqualified/duplicate) — same as `select()` in digest.py restricts
-    `group_by_qual` to `primary`/`near`. Staged jobs get `staged_cards_html`
-    below instead, so an applied-to job never resurfaces as a suggestion, and
-    disqualified/duplicate jobs never inherit a leftover qualification verdict
-    from before they were screened out."""
+
+def _is_screened_out(job) -> bool:
+    return bool(job.disqualifier or job.duplicate_of)
+
+
+def bucketed_cards_html(jobs: list, card_fn) -> str:
+    """Render the open (no stage, not disqualified/duplicate) subset of `jobs`
+    as cards grouped into the same apply-now/stretch/reach buckets as the
+    email digest (via group_by_qual), each under a heading with a count, so
+    apply-now jobs float above stretch/reach/unclassified ones instead of a
+    flat score sort. `card_fn(job)` renders one card's HTML.
+
+    Takes the *full* job list and filters internally — rather than requiring
+    the caller to pre-split into "open" first — so this, `staged_cards_html`,
+    and the disqualified/duplicate section always partition the same source
+    list into non-overlapping, exhaustive groups by construction. A caller
+    that pre-filters before calling this is harmless (the filter is
+    idempotent), but isn't required and shouldn't be relied on."""
+    open_jobs = [j for j in jobs if _is_open(j)]
     return "".join(
-        _section_html(label, members, card_fn) for label, members in group_by_qual(jobs)
+        _section_html(label, members, card_fn) for label, members in group_by_qual(open_jobs)
     )
 
 
 def staged_cards_html(jobs: list, card_fn) -> str:
-    """Render jobs that already have an application stage, grouped like the
-    digest's pipeline tracker: active stages (offer/interviewing/applied) by
-    stage, most-advanced first, then a flat Closed section for denied/
-    withdrawn. Kept separate from `bucketed_cards_html` so in-progress jobs
-    don't get re-mixed into the apply-now/stretch/reach buckets."""
-    tracked = [j for j in jobs if j.stage in ACTIVE_STAGES]
-    closed = [j for j in jobs if j.stage in ("denied", "withdrawn")]
+    """Render the staged (has a stage, not disqualified/duplicate) subset of
+    `jobs`, grouped like the digest's pipeline tracker: active stages
+    (offer/interviewing/applied) by stage, most-advanced first, then a flat
+    Closed section for denied/withdrawn. Kept separate from
+    `bucketed_cards_html` so in-progress jobs don't get re-mixed into the
+    apply-now/stretch/reach buckets.
+
+    Unlike `split_by_stage` (digest-specific: drops denied/withdrawn
+    entirely, since the digest only tracks active applications), this keeps
+    every staged job — the cockpit/report are the full inventory, so a
+    denied/withdrawn job still needs a section to render into, even if
+    that section stays hidden by default. Do not feed this function
+    `split_by_stage`'s `tracked` output — it already excludes denied/
+    withdrawn, so this function's own Closed split would always come up
+    empty."""
+    staged = [j for j in jobs if j.stage and not _is_screened_out(j)]
+    tracked = [j for j in staged if j.stage in ACTIVE_STAGES]
+    closed = [j for j in staged if j.stage in ("denied", "withdrawn")]
     parts = [_section_html(label, members, card_fn) for _st, label, members in group_by_stage(tracked)]
     parts.append(_section_html("Closed", closed, card_fn))
     return "".join(parts)
@@ -522,10 +543,9 @@ def report_html(jobs: list, cfg: dict) -> str:
     row_of = {j.id: i for i, j in enumerate(jobs, 1)}
     card_fn = lambda j: job_card(
         j, row_of[j.id], full_desc=True, report=True, row_no=row_of[j.id], stale_days=stale_days)
-    open_jobs, staged = split_by_stage(live)
     excluded = [j for j in jobs if j.disqualifier or j.duplicate_of]
-    cards = (bucketed_cards_html(open_jobs, card_fn)
-             + staged_cards_html(staged, card_fn)
+    cards = (bucketed_cards_html(jobs, card_fn)
+             + staged_cards_html(jobs, card_fn)
              + _section_html("Disqualified & duplicates", excluded, card_fn))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
     return page("JobHunter — Full Report", intro, body)
