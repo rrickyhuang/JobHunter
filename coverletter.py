@@ -34,6 +34,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+import company_research
 import config
 import db
 from enrichment import _profile_block
@@ -55,6 +56,8 @@ def _resolve_job(conn, target: str):
 def build_prompt(job, cfg: dict, notes: str = "") -> str:
     profile = cfg.get("profile", {})
     context_lines = []
+    if job.company_research:
+        context_lines.append(f"Company research: {job.company_research}")
     if job.fit_summary:
         context_lines.append(f"Fit assessment: {job.fit_summary}")
     if job.autonomy_evidence:
@@ -264,11 +267,21 @@ def letter_body(job) -> str | None:
 def draft_letter(job, cfg: dict, notes: str = "") -> Path:
     """Draft + save a letter, returning its path. Raises CoverLetterError.
 
+    Before drafting, a `claude -p` web-search call researches the hiring
+    company (cached on the job row — see company_research.py — so a repeat
+    draft/revise never re-researches it). A research failure shouldn't block
+    drafting, so it's just skipped.
+
     A second `claude -p` call (fresh context) critiques the draft against the
     job posting before it's saved; if it flags concrete issues, one more call
     applies that critique as a revision. A critique-call failure shouldn't
     block presenting an otherwise-good draft, so it's caught rather than
     raising CoverLetterError."""
+    conn = db.connect()
+    db.init_db(conn)
+    company_research.get_or_research(conn, job)
+    conn.close()
+
     letter = run_claude(build_prompt(job, cfg, notes))
     try:
         critique = run_claude(build_critique_prompt(job, letter))
@@ -341,13 +354,14 @@ def _generate(args: list[str]) -> None:
         notes = _prompt_notes()
 
     cfg = config.load_config()
-    prompt = build_prompt(job, cfg, notes)
 
     print(f"\n  Drafting a cover letter for: {job.title} @ {job.company}")
     print("  Shelling out to the claude CLI (uses your subscription, not API tokens)...")
-    letter = _run_claude(prompt)
-
-    path = _save_letter(job, letter)
+    try:
+        path = draft_letter(job, cfg, notes)
+    except CoverLetterError as e:
+        print(f"\n  {e}\n")
+        sys.exit(1)
     print(f"\n  Saved: {path}\n")
 
 

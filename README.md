@@ -135,6 +135,7 @@ python help.py                     # consolidated command reference (pulled from
 - `serve.py` — local Flask + HTMX web cockpit (browse, status, cover letters, notes, pipeline board)
 - `addjob.py` — manual job intake, same scoring/enrichment pipeline as scraped jobs
 - `coverletter.py` — drafts/revises cover letters via the `claude` CLI (not the API)
+- `company_research.py` — one-time web-research blurb on the hiring company, cached per job and fed into cover-letter drafts
 - `mark.py` — sets a job's application status/stage
 - `scrape.py` — CLI entry point and pipeline orchestration
 - `run_daily.bat` — Windows Task Scheduler entry point (`scrape.py --all --digest`, daily 9pm)

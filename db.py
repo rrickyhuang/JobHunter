@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     stage               TEXT,
     stage_at            TEXT,
     notes               TEXT NOT NULL DEFAULT '',
-    duplicate_of        TEXT
+    duplicate_of        TEXT,
+    company_research    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_new ON jobs(is_new);
@@ -147,6 +148,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "duplicate_of": "TEXT",
         "commute_min_precise": "INTEGER",
         "notes": "TEXT NOT NULL DEFAULT ''",
+        "company_research": "TEXT",
     }
     stage_is_new = "stage" not in existing
     for col, typ in added.items():
@@ -213,7 +215,7 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
     # duplicate_of is dedup.py's call, not a re-scrape's — a job's own fields
     # can change on re-scrape without that verdict needing to be recomputed.
     protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at",
-                 "notes", "duplicate_of", "commute_min_precise"}
+                 "notes", "duplicate_of", "commute_min_precise", "company_research"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -307,6 +309,16 @@ def set_notes(conn: sqlite3.Connection, job_id: str, notes: str) -> None:
     conn.execute(
         "UPDATE jobs SET notes = ? WHERE id = ?",
         (notes or "", job_id),
+    )
+    conn.commit()
+
+
+def set_company_research(conn: sqlite3.Connection, job_id: str, blurb: str) -> None:
+    """Cache a company-research blurb. See models.Job.company_research and
+    company_research.py."""
+    conn.execute(
+        "UPDATE jobs SET company_research = ? WHERE id = ?",
+        (blurb, job_id),
     )
     conn.commit()
 

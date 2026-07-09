@@ -101,6 +101,10 @@ class Job:
     # Free-text application notes (recruiter, dates, follow-ups, interview prep).
     # User state — never overwritten on re-scrape. Editable from the web cockpit.
     notes: str = ""
+    # Cached web-research blurb on the hiring company (what they do, why they
+    # might be hiring now), fetched once via company_research.py and reused
+    # across cover-letter drafts/revisions. None until fetched.
+    company_research: str | None = None
 
     # ── Cross-source dedup ───────────────────────────────────────────────────
     # Set by dedup.py when this job is judged a re-post of another job (e.g. the
