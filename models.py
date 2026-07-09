@@ -81,6 +81,12 @@ class Job:
     # ── Meta ─────────────────────────────────────────────────────────────────
     posted_at: datetime | None = None
     scraped_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # When this posting first entered the DB. Unlike scraped_at ("last seen",
+    # refreshed every re-scrape), this is set once on insert and never updated —
+    # so it's a stable "arrived at" the cockpit can compare against "when you
+    # last opened it" to decide what's new to triage. Backfilled from scraped_at
+    # for rows that predate this field.
+    first_seen_at: datetime | None = None
     description: str = ""
 
     # ── Computed ─────────────────────────────────────────────────────────────

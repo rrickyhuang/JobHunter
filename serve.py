@@ -18,6 +18,7 @@ import argparse
 import logging
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 from flask import Flask, abort, make_response, request
 from markupsafe import escape
@@ -258,6 +259,42 @@ def _stale_days() -> int:
         "stale_after_days", html_render.STALE_AFTER_DAYS)
 
 
+# A cockpit visit more than this long after the last one starts a fresh triage
+# "session": jobs that arrived while you were away become the New group.
+_NEW_SESSION_GAP = timedelta(minutes=30)
+_SEEN_COOKIE = "cockpit_seen"
+
+
+def _new_since_marker() -> tuple[datetime, str]:
+    """Decide the 'new to triage' cutoff for this cockpit load and the cookie
+    value to persist it. Returns (new_since, cookie_value).
+
+    The cookie carries two ISO timestamps joined by '|': the last load
+    ('touch') and the current 'new since' cutoff ('boundary'). Pipe-delimited,
+    not JSON — a JSON value's comma is a cookie separator and would corrupt the
+    cookie. On each load, if more than _NEW_SESSION_GAP has passed since the
+    last touch, we treat it as a fresh sitting and advance the boundary to
+    *when you last looked* (the previous touch) — so New shows everything that
+    arrived while you were away. Within a sitting (rapid reloads), the boundary
+    holds still, so the New group stays stable while you triage instead of
+    emptying on refresh. First-ever visit: boundary = now, so nothing is
+    spuriously flagged new."""
+    now = datetime.now(timezone.utc)
+    prev_touch = boundary = now
+    raw = request.cookies.get(_SEEN_COOKIE)
+    if raw:
+        try:
+            touch_s, boundary_s = raw.split("|", 1)
+            prev_touch = datetime.fromisoformat(touch_s)
+            boundary = datetime.fromisoformat(boundary_s)
+        except ValueError:
+            prev_touch = boundary = now
+    if now - prev_touch > _NEW_SESSION_GAP:
+        boundary = prev_touch
+    cookie = f"{now.isoformat()}|{boundary.isoformat()}"
+    return boundary, cookie
+
+
 def _card(job, row_no: int) -> str:
     return html_render.job_card(
         job, row_no, full_desc=True, report=True, row_no=row_no,
@@ -411,8 +448,10 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         # so the two can't disagree. The inbox is a decision queue: it leads
         # with what still needs a call, hides handled/screened-out jobs behind
         # "Show everything", and leaves in-progress applications to the board.
+        # "New to triage" = arrived since you last sat down (see marker below).
+        new_since, seen_cookie = _new_since_marker()
         queue_groups, noise_groups, pipeline = html_render.inbox_partition(
-            jobs, _stale_days())
+            jobs, _stale_days(), new_since=new_since)
         new_count = sum(len(m) for label, m in queue_groups if label == "New to triage")
         queue_count = sum(len(m) for _label, m in queue_groups)
         pipeline_count = sum(1 for j in pipeline if j.stage in html_render.ACTIVE_STAGES)
@@ -425,7 +464,11 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                 + html_render.INBOX_SCRIPT)
         conn.close()
         intro = "Your triage queue — act on a card and it drops out of the list."
-        return html_render.page("JobHunter — Cockpit", intro, body, head_extra=_HEAD)
+        resp = make_response(
+            html_render.page("JobHunter — Cockpit", intro, body, head_extra=_HEAD))
+        resp.set_cookie(_SEEN_COOKIE, seen_cookie, max_age=60 * 60 * 24 * 365,
+                        samesite="Lax")
+        return resp
 
     @app.route("/board")
     def board():

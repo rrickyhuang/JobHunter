@@ -561,7 +561,19 @@ def report_html(jobs: list, cfg: dict) -> str:
 # One partition, used for both the counts and the cards, so the header numbers
 # can never disagree with what's rendered below them.
 
-def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS):
+def _first_seen_after(job, cutoff: datetime | None) -> bool:
+    """True if the posting first arrived after `cutoff` (tz-safe). False when
+    there's no cutoff or no arrival time — callers treat that as 'not new'."""
+    if cutoff is None or not job.first_seen_at:
+        return False
+    seen = job.first_seen_at
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return seen > cutoff
+
+
+def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
+                    new_since: datetime | None = None):
     """Assign every job to exactly one inbox bucket, most-actionable first.
 
     Returns (queue_groups, noise_groups, pipeline) where:
@@ -572,6 +584,11 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS):
       - pipeline: jobs already in an application stage. NOT rendered in the
         list at all (the pipeline board owns them); returned only so the caller
         can show a count + link.
+
+    `new_since` is the "you last looked at the cockpit around here" cutoff: a
+    job first seen after it lands in "New to triage" instead of the backlog.
+    When None (no cutoff known), nothing counts as new and those jobs fall to
+    the backlog — the queue is unaffected, just unsplit.
 
     Buckets are checked in priority order so each job lands in one place and
     the groups stay mutually exclusive and exhaustive. A saved job outranks
@@ -592,7 +609,7 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS):
             dismissed_.append(j)
         elif is_stale(j, stale_days):
             stale_.append(j)
-        elif j.is_new:
+        elif _first_seen_after(j, new_since):
             new.append(j)
         else:
             backlog.append(j)

@@ -21,7 +21,7 @@ DB_PATH = Path(__file__).with_name("jobs.db")
 # Fields that need JSON or ISO encoding rather than raw scalar storage.
 _JSON_FIELDS = {"skills_leverage", "score_breakdown",
                 "required_credentials", "missing_requirements"}
-_DATETIME_FIELDS = {"posted_at", "scraped_at", "stage_at"}
+_DATETIME_FIELDS = {"posted_at", "scraped_at", "first_seen_at", "stage_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
     "is_admin_heavy", "is_drafting_only", "is_hierarchical",
@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     missing_requirements TEXT,
     posted_at           TEXT,
     scraped_at          TEXT,
+    first_seen_at       TEXT,
     description         TEXT,
     score               REAL,
     score_breakdown     TEXT,
@@ -149,8 +150,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "commute_min_precise": "INTEGER",
         "notes": "TEXT NOT NULL DEFAULT ''",
         "company_research": "TEXT",
+        "first_seen_at": "TEXT",
     }
     stage_is_new = "stage" not in existing
+    first_seen_is_new = "first_seen_at" not in existing
     for col, typ in added.items():
         if col not in existing:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
@@ -160,6 +163,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE jobs SET stage = 'applied', stage_at = applied_at "
             "WHERE applied = 1"
+        )
+    # Backfill first_seen_at from scraped_at (best available proxy) so existing
+    # rows have a stable arrival time — they'll never spuriously read as "new".
+    if first_seen_is_new:
+        conn.execute(
+            "UPDATE jobs SET first_seen_at = scraped_at WHERE first_seen_at IS NULL"
         )
     conn.commit()
 
@@ -204,6 +213,10 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
     Preserves user state (seen/saved/dismissed) on update.
     """
     existing = conn.execute("SELECT id FROM jobs WHERE id = ?", (job.id,)).fetchone()
+    # Stamp arrival time once, on first insert; protected below so re-scrapes
+    # never move it (that's what scraped_at is for).
+    if job.first_seen_at is None:
+        job.first_seen_at = job.scraped_at
     data = _encode(job)
     if existing is None:
         cols = ", ".join(data.keys())
@@ -215,7 +228,8 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
     # duplicate_of is dedup.py's call, not a re-scrape's — a job's own fields
     # can change on re-scrape without that verdict needing to be recomputed.
     protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at",
-                 "notes", "duplicate_of", "commute_min_precise", "company_research"}
+                 "notes", "duplicate_of", "commute_min_precise", "company_research",
+                 "first_seen_at"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
