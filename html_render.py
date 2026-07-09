@@ -429,6 +429,10 @@ function applyFilters(){
   document.getElementById('count').textContent = n+' shown';
 }
 document.addEventListener('DOMContentLoaded', applyFilters);
+// A card swapped in via HTMX (e.g. after Dismiss/Interested/stage change)
+// starts fully visible and ignores whatever filters are currently active —
+// re-apply them whenever HTMX finishes settling new content into the page.
+document.addEventListener('htmx:afterSettle', applyFilters);
 </script>"""
 
 
