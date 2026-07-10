@@ -1,5 +1,5 @@
 @echo off
-REM Launch the JobHunter web cockpit, bound to all interfaces so phones and
+REM Launch the North Arrow web cockpit, bound to all interfaces so phones and
 REM other devices on the same Wi-Fi can reach it at http://<PC-LAN-IP>:5001.
 REM Requires a one-time Windows Firewall rule allowing inbound TCP 5001
 REM (see the phone-access note in the README / run the netsh command once).

@@ -30,7 +30,7 @@ _SCRIPTS = [
 
 
 def main() -> None:
-    print("\n  JobHunter — command reference")
+    print("\n  North Arrow — command reference")
     print("  " + "=" * 60)
     for name, module, blurb in _SCRIPTS:
         print(f"\n  {name}")

@@ -24,7 +24,7 @@ from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 import transit_data
 
 _CACHE_PATH = Path(__file__).with_name(".geocode_cache.json")
-_geolocator = Nominatim(user_agent="jobhunter (personal use)")
+_geolocator = Nominatim(user_agent="north-arrow (personal use, github.com/rrickyhuang/JobHunter)")
 _last_call = 0.0  # Nominatim asks for <=1 req/sec; we self-throttle.
 
 

@@ -11,6 +11,32 @@ import html
 import re
 from datetime import date, datetime, timezone
 
+# ── North Arrow brand ────────────────────────────────────────────────────
+# Structural/chrome colors — headings, borders, links. Kept separate from the
+# functional status colors below, which encode meaning (qualification tier,
+# pipeline stage) and must stay visually distinct from brand chrome.
+PAPER = "#f3efe6"
+PAPER_RAISED = "#faf7f0"
+INK = "#171f2e"
+BLUEPRINT = "#1e3f73"
+BLUEPRINT_BRIGHT = "#3d6fc2"
+GRID = "#c7d2e1"
+GRID_FAINT = "#dde5ef"
+MUTED = "#5b6478"
+MUTED_LIGHT = "#7d879c"
+TINT = "#e4ecf9"  # light active/highlight background, e.g. selected filter chips
+
+FONT_SANS = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif"
+FONT_MONO = "ui-monospace,SF Mono,Cascadia Mono,Consolas,monospace"
+
+# A monoline pen-nib favicon (the north-up mark) — falls back to a solid
+# silhouette since the outline strokes are too thin to render at 16x16.
+FAVICON_LINK = (
+    '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 '
+    'viewBox=%270 0 100 100%27%3E%3Cpolygon points=%2750,8 68,44 50,90 32,44%27 '
+    'fill=%27%231e3f73%27/%3E%3C/svg%3E">'
+)
+
 # A posting is "stale" once its source hasn't listed it for this many days.
 # scraped_at is refreshed on every re-scrape (see db.upsert), so it doubles as a
 # "last seen" timestamp. Overridable via config delivery.stale_after_days.
@@ -55,10 +81,10 @@ def is_overdue_followup(job, days: int = FOLLOW_UP_AFTER_DAYS) -> bool:
 
 
 _QUAL_COLOR = {
-    "qualified": "#1a7f37",
-    "stretch": "#9a6700",
-    "reach": "#b35900",
-    "overqualified": "#6e7781",
+    "qualified": "#1e8a4c",
+    "stretch": "#b9862a",
+    "reach": "#bd5a2e",
+    "overqualified": "#5c7a90",
 }
 
 # Digest grouping: cards are bucketed by how applyable they are (enrichment's
@@ -114,9 +140,9 @@ def _section_html(label: str, jobs: list, card_fn) -> str:
     if not jobs:
         return ""
     return (
-        f'<h3 style="margin:20px 0 10px;font-size:15px;color:#24292f;'
-        f'border-bottom:1px solid #d0d7de;padding-bottom:6px;">'
-        f'{_esc(label)} <span style="color:#8b949e;font-weight:400;">'
+        f'<h3 style="margin:20px 0 10px;font-size:15px;color:{INK};'
+        f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
+        f'{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({len(jobs)})</span></h3>'
         + "".join(card_fn(j) for j in jobs)
     )
@@ -183,8 +209,12 @@ ACTIVE_STAGES = ("offer", "interviewing", "applied")
 # per-card badge in the full report, never in the tracker.
 STAGE_LABEL = {"applied": "Applied", "interviewing": "Interviewing", "offer": "Offer",
                "denied": "Denied", "withdrawn": "Withdrawn"}
-_STAGE_COLOR = {"applied": "#0969da", "interviewing": "#8250df", "offer": "#1a7f37",
-                "denied": "#cf222e", "withdrawn": "#57606a"}
+# "Applied" deliberately reuses the brand blue — applying is the one action
+# the whole tool is built around. The rest are harmonized to the same
+# saturation/lightness band as the qualification colors above, just a
+# different hue per stage.
+_STAGE_COLOR = {"applied": BLUEPRINT_BRIGHT, "interviewing": "#7c5fd1", "offer": "#1e8a4c",
+                "denied": "#b23b4c", "withdrawn": "#6e7480"}
 
 
 def split_by_stage(jobs: list) -> tuple[list, list]:
@@ -235,12 +265,13 @@ def _salary(j) -> str:
 
 def _bar(score: float) -> str:
     pct = int(round(score * 100))
-    color = "#1a7f37" if score >= 0.6 else ("#9a6700" if score >= 0.4 else "#b35900")
+    color = (_QUAL_COLOR["qualified"] if score >= 0.6
+             else (_QUAL_COLOR["stretch"] if score >= 0.4 else _QUAL_COLOR["reach"]))
     return (
-        f'<div style="background:#eaeef2;border-radius:6px;height:10px;width:160px;'
+        f'<div style="background:{GRID_FAINT};border-radius:6px;height:10px;width:160px;'
         f'display:inline-block;vertical-align:middle;overflow:hidden;">'
         f'<div style="background:{color};height:10px;width:{pct}%;"></div></div>'
-        f'<span style="color:#57606a;font-size:13px;margin-left:8px;">{score:.2f}</span>'
+        f'<span style="color:{MUTED};font-size:13px;margin-left:8px;">{score:.2f}</span>'
     )
 
 
@@ -254,13 +285,13 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     title = _esc(job.title)
     if rank is not None:
         title = f"{rank}. {title}"
-    star = ' <span style="color:#bf8700;">★</span>' if is_starred(job) else ""
-    new = (' <span style="background:#1a7f37;color:#fff;font-size:11px;'
+    star = f' <span style="color:{_QUAL_COLOR["stretch"]};">★</span>' if is_starred(job) else ""
+    new = (f' <span style="background:{_QUAL_COLOR["qualified"]};color:#fff;font-size:11px;'
            'padding:1px 6px;border-radius:10px;white-space:nowrap;">NEW</span>'
            ) if job.is_new else ""
     stage = ""
     if job.stage:
-        sc = _STAGE_COLOR.get(job.stage, "#57606a")
+        sc = _STAGE_COLOR.get(job.stage, "#6e7480")
         stage = (f' <span style="background:{sc};color:#fff;font-size:11px;'
                  f'padding:1px 6px;border-radius:10px;white-space:nowrap;">'
                  f'{_esc(STAGE_LABEL.get(job.stage, job.stage.title()))}</span>')
@@ -274,7 +305,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
 
     qual_html = ""
     if job.qualification:
-        c = _QUAL_COLOR.get(job.qualification, "#57606a")
+        c = _QUAL_COLOR.get(job.qualification, MUTED)
         yrs = f", ~{job.required_years}+ yrs" if job.required_years else ""
         gaps = ""
         if job.missing_requirements:
@@ -282,21 +313,22 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
             items = "".join(f"<li>{_esc(g)}</li>" for g in shown)
             extra = len(job.missing_requirements) - len(shown)
             if extra:
-                items += (f'<li style="list-style:none;color:#8b949e;">'
+                items += (f'<li style="list-style:none;color:{MUTED_LIGHT};">'
                           f'+{extra} more gap{"s" if extra != 1 else ""}</li>')
-            gaps = (f'<ul style="margin:4px 0 0 0;padding-left:18px;color:#57606a;'
+            gaps = (f'<ul style="margin:4px 0 0 0;padding-left:18px;color:{MUTED};'
                     f'font-size:13px;">{items}</ul>')
         qual_html = (
             f'<div style="margin-top:6px;font-size:13px;">'
             f'<span style="background:{c};color:#fff;padding:1px 8px;border-radius:10px;'
             f'font-weight:600;white-space:nowrap;">{_esc(job.qualification).upper()}</span> '
-            f'<span style="color:#57606a;">posting seniority: {_esc(job.seniority or "?")}{yrs}</span>'
+            f'<span style="color:{MUTED};">posting seniority: {_esc(job.seniority or "?")}{yrs}</span>'
             f'{gaps}</div>'
         )
 
     id_row = ""
     if row_no is not None:
-        id_row = (f'<div style="color:#8b949e;font-size:12px;margin-top:2px;">'
+        id_row = (f'<div style="color:{MUTED_LIGHT};font-size:12px;margin-top:2px;'
+                  f'font-family:{FONT_MONO};">'
                   f'id <code style="user-select:all;">{_esc(job.id)}</code> '
                   f'&nbsp;·&nbsp; #{row_no}</div>')
 
@@ -311,33 +343,33 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
             lead, rest = lead_sentence(job.fit_summary)
             inner = _esc(lead)
             if rest:
-                inner += (f'<div style="margin-top:4px;color:#8b949e;font-size:13px;">'
+                inner += (f'<div style="margin-top:4px;color:{MUTED_LIGHT};font-size:13px;">'
                           f'{_esc(rest)}</div>')
-        fit = (f'<div style="margin-top:8px;color:#24292f;font-size:14px;'
-               f'border-left:3px solid #d0d7de;padding-left:10px;">{inner}</div>')
+        fit = (f'<div style="margin-top:8px;color:{INK};font-size:14px;'
+               f'border-left:3px solid {GRID};padding-left:10px;">{inner}</div>')
 
     desc = ""
     if full_desc and job.description:
         body = _esc(job.description).replace("\n", "<br>")
         desc = (f'<details style="margin-top:8px;"><summary style="cursor:pointer;'
-                f'color:#0969da;font-size:13px;">Full description</summary>'
-                f'<div style="margin-top:6px;color:#24292f;font-size:13px;'
+                f'color:{BLUEPRINT_BRIGHT};font-size:13px;">Full description</summary>'
+                f'<div style="margin-top:6px;color:{INK};font-size:13px;'
                 f'line-height:1.5;max-height:340px;overflow:auto;">{body}</div></details>')
 
     # Disqualified/duplicate pills each go on their OWN line so they never
     # wrap mid-title.
     dq = ""
     if job.disqualifier:
-        dq = (f'<div style="margin-top:6px;"><span style="background:#cf222e;color:#fff;'
+        dq = (f'<div style="margin-top:6px;"><span style="background:{_STAGE_COLOR["denied"]};color:#fff;'
               f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
               f'disqualified: {_esc(job.disqualifier)}</span></div>')
     if job.duplicate_of:
-        dq += (f'<div style="margin-top:6px;"><span style="background:#57606a;color:#fff;'
+        dq += (f'<div style="margin-top:6px;"><span style="background:{MUTED};color:#fff;'
                f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
                f'duplicate posting</span></div>')
     stale = report and is_stale(job, stale_days)
     if stale:
-        dq += (f'<div style="margin-top:6px;"><span style="background:#9a6700;color:#fff;'
+        dq += (f'<div style="margin-top:6px;"><span style="background:{_QUAL_COLOR["stretch"]};color:#fff;'
                f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
                f'stale — not seen in {stale_days}+ days</span></div>')
 
@@ -357,65 +389,84 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
     return (
-        f'<div{id_attr}{data} style="border:1px solid #d0d7de;border-radius:10px;padding:14px 16px;'
-        f'margin-bottom:14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
-        f'<div style="font-size:16px;font-weight:600;color:#0969da;line-height:1.35;">'
-        f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
+        f'<div{id_attr}{data} style="border:1px solid {GRID};border-radius:10px;padding:14px 16px;'
+        f'margin-bottom:14px;font-family:{FONT_SANS};">'
+        f'<div style="font-size:16px;font-weight:600;color:{BLUEPRINT_BRIGHT};line-height:1.35;">'
+        f'<a href="{_esc(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">{title}</a>'
         f'{star}{new}{stage}</div>'
-        f'<div style="color:#57606a;font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
+        f'<div style="color:{MUTED};font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
         f'{dq}'
         f'<div style="margin:6px 0;">{_bar(job.score)}</div>'
-        f'<div style="color:#57606a;font-size:13px;">{meta}</div>'
+        f'<div style="color:{MUTED};font-size:13px;">{meta}</div>'
         f'{qual_html}{fit}{desc}{actions_html}</div>'
     )
 
 
 def page(title: str, intro: str, body: str, *, head_extra: str = "",
-         max_width: int = 760) -> str:
+         max_width: int = 760, chrome: bool = True) -> str:
+    """`chrome=True` (cockpit/report — served live by Flask, free to use CSS
+    backgrounds/scripts) gets the grid-paper ground and a drafting title-block
+    footer. `chrome=False` (the emailed digest) stays on a flat background and
+    a plain footer line — Gmail strips embedded `background-image` gradients
+    unpredictably, so the digest never relies on one."""
+    grid_bg = (
+        f'background-image:repeating-linear-gradient(0deg,{GRID_FAINT} 0 1px,transparent 1px 32px),'
+        f'repeating-linear-gradient(90deg,{GRID_FAINT} 0 1px,transparent 1px 32px);'
+    ) if chrome else ""
+    view = title.split("—", 1)[1].strip() if "—" in title else title
+    footer = (
+        f'<div style="display:flex;justify-content:space-between;border-top:1.5px solid {BLUEPRINT};'
+        f'padding-top:10px;margin-top:24px;font-family:{FONT_MONO};font-size:11px;'
+        f'color:{MUTED};letter-spacing:0.04em;">'
+        f'<span>NORTH ARROW &middot; {_esc(view).upper()}</span>'
+        f'<span>{date.today().isoformat()}</span></div>'
+    ) if chrome else (
+        f'<div style="color:{MUTED_LIGHT};font-size:12px;margin-top:20px;font-family:{FONT_SANS};">'
+        f'Generated by North Arrow &middot; {date.today().isoformat()}</div>'
+    )
     return (
         f'<!doctype html><html><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>{_esc(title)}</title>{head_extra}</head>'
-        f'<body style="margin:0;background:#f6f8fa;padding:20px;">'
+        f'<title>{_esc(title)}</title>{FAVICON_LINK}{head_extra}</head>'
+        f'<body style="margin:0;background:{PAPER};{grid_bg}padding:20px;">'
         f'<div style="max-width:{max_width}px;margin:0 auto;">'
-        f'<h1 style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
-        f'font-size:22px;color:#24292f;margin:0 0 4px;">{_esc(title)}</h1>'
-        f'<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'
-        f'color:#57606a;font-size:14px;margin-bottom:16px;">{intro}</div>'
+        f'<h1 style="font-family:{FONT_SANS};'
+        f'font-size:22px;color:{INK};margin:0 0 4px;">{_esc(title)}</h1>'
+        f'<div style="font-family:{FONT_SANS};'
+        f'color:{MUTED};font-size:14px;margin-bottom:16px;">{intro}</div>'
         f'{body}'
-        f'<div style="color:#8b949e;font-size:12px;margin-top:20px;font-family:-apple-system,'
-        f'Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Generated by JobHunter · {date.today().isoformat()}</div>'
+        f'{footer}'
         f'</div></body></html>'
     )
 
 
 def _tracker_row(job, row_no: int | None) -> str:
-    color = _STAGE_COLOR.get(job.stage, "#57606a")
+    color = _STAGE_COLOR.get(job.stage, "#6e7480")
     when = (f' &nbsp;·&nbsp; since {job.stage_at.date().isoformat()}'
             if job.stage_at else "")
     rowtxt = f" &nbsp;·&nbsp; #{row_no}" if row_no is not None else ""
     return (
-        '<div style="border:1px solid #eaeef2;border-radius:8px;padding:8px 12px;'
-        'margin-bottom:8px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
+        f'<div style="border:1px solid {GRID_FAINT};border-radius:8px;padding:8px 12px;'
+        f'margin-bottom:8px;font-family:{FONT_SANS};">'
         f'<span style="background:{color};color:#fff;font-size:11px;padding:1px 8px;'
         f'border-radius:10px;white-space:nowrap;">{_esc(STAGE_LABEL[job.stage]).upper()}</span> '
-        f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;font-weight:600;'
+        f'<a href="{_esc(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;font-weight:600;'
         f'font-size:14px;">{_esc(job.title)}</a> '
-        f'<span style="color:#57606a;font-size:13px;">— {_esc(job.company or "Unknown")}</span>'
-        f'<span style="color:#8b949e;font-size:12px;">{when}{rowtxt}</span></div>'
+        f'<span style="color:{MUTED};font-size:13px;">— {_esc(job.company or "Unknown")}</span>'
+        f'<span style="color:{MUTED_LIGHT};font-size:12px;">{when}{rowtxt}</span></div>'
     )
 
 
 def _tracker_html(tracked: list, row_of: dict[str, int]) -> str:
     if not tracked:
         return ""
-    out = ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
-           'font-size:17px;color:#24292f;margin:28px 0 6px;">'
-           f'Application pipeline <span style="color:#8b949e;font-weight:400;font-size:14px;">'
+    out = (f'<h2 style="font-family:{FONT_SANS};'
+           f'font-size:17px;color:{INK};margin:28px 0 6px;">'
+           f'Application pipeline <span style="color:{MUTED_LIGHT};font-weight:400;font-size:14px;">'
            f'({len(tracked)})</span></h2>'
-           '<div style="color:#8b949e;font-size:13px;margin-bottom:12px;'
-           'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+           f'<div style="color:{MUTED_LIGHT};font-size:13px;margin-bottom:12px;'
+           f'font-family:{FONT_SANS};">'
            'Already in progress — kept out of the suggestions above.</div>')
     for _st, _label, members in group_by_stage(tracked):
         out += "".join(_tracker_row(j, row_of.get(j.id)) for j in members)
@@ -431,25 +482,25 @@ def digest_html(primary: list, near: list, tracked: list, cfg: dict,
     body = ""
     if primary:
         for label, members in group_by_qual(primary):
-            body += ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
-                     'font-size:17px;color:#24292f;margin:24px 0 12px;">'
-                     f'{_esc(label)} <span style="color:#8b949e;font-weight:400;font-size:14px;">'
+            body += (f'<h2 style="font-family:{FONT_SANS};'
+                     f'font-size:17px;color:{INK};margin:24px 0 12px;">'
+                     f'{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;font-size:14px;">'
                      f'({len(members)})</span></h2>')
             body += "".join(job_card(j, i, row_no=row_of.get(j.id))
                             for i, j in enumerate(members, 1))
     else:
-        body += ('<div style="color:#57606a;font-family:-apple-system,Segoe UI,Roboto,'
-                 'sans-serif;">No postings cleared the bar today.</div>')
+        body += (f'<div style="color:{MUTED};font-family:{FONT_SANS};">'
+                 'No postings cleared the bar today.</div>')
     if near:
-        body += ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
-                 'font-size:17px;color:#24292f;margin:24px 0 12px;">Near misses (below the bar)</h2>')
+        body += (f'<h2 style="font-family:{FONT_SANS};'
+                 f'font-size:17px;color:{INK};margin:24px 0 12px;">Near misses (below the bar)</h2>')
         body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(near, 1))
     body += _tracker_html(tracked, row_of)
-    return page("JobHunter — Daily Shortlist", intro, body)
+    return page("North Arrow — Daily Shortlist", intro, body, chrome=False)
 
 
 # ── Browser report: search + filter controls ────────────────────────────────
-_INPUT_STYLE = ("padding:6px 8px;border:1px solid #d0d7de;border-radius:6px;"
+_INPUT_STYLE = (f"padding:6px 8px;border:1px solid {GRID};border-radius:6px;"
                 "font-size:13px;font-family:inherit;background:#fff;")
 
 
@@ -464,23 +515,23 @@ def _filter_bar(jobs: list) -> str:
     stages = [s for s in (*ACTIVE_STAGES, "denied", "withdrawn")
               if any(j.stage == s for j in jobs)]
     return (
-        '<div style="position:sticky;top:0;background:#f6f8fa;padding:12px 0;z-index:10;'
-        'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid #d0d7de;'
-        'margin-bottom:16px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+        f'<div style="position:sticky;top:0;background:{PAPER};padding:12px 0;z-index:10;'
+        f'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid {GRID};'
+        f'margin-bottom:16px;font-family:{FONT_SANS};">'
         f'<input id="q" type="search" placeholder="Search title, company, description…" '
         f'oninput="applyFilters()" style="{_INPUT_STYLE}flex:1;min-width:220px;">'
         f'{opts("source", sources)}{opts("role", roles)}{opts("qual", quals)}{opts("stage", stages)}'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdq" onchange="applyFilters()"> show disqualified</label>'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdup" onchange="applyFilters()"> show duplicates</label>'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fstale" onchange="applyFilters()"> show stale</label>'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdismissed" onchange="applyFilters()"> show dismissed</label>'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fstaged" onchange="applyFilters()"> show in pipeline</label>'
-        '<span id="count" style="font-size:13px;color:#57606a;margin-left:auto;"></span>'
+        f'<span id="count" style="font-size:13px;color:{MUTED};margin-left:auto;"></span>'
         '</div>'
     )
 
@@ -548,7 +599,7 @@ def report_html(jobs: list, cfg: dict) -> str:
              + staged_cards_html(jobs, card_fn)
              + _section_html("Disqualified & duplicates", excluded, card_fn))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
-    return page("JobHunter — Full Report", intro, body)
+    return page("North Arrow — Full Report", intro, body)
 
 
 # ── Cockpit inbox view ───────────────────────────────────────────────────────
@@ -630,9 +681,9 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
 def _grp_header(label: str, count: int, *, noise: bool) -> str:
     return (
         f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
-        f'style="margin:22px 0 10px;font-size:15px;color:#24292f;'
-        f'border-bottom:1px solid #d0d7de;padding-bottom:6px;">'
-        f'{_esc(label)} <span class="grp-n" style="color:#8b949e;font-weight:400;">'
+        f'style="margin:22px 0 10px;font-size:15px;color:{INK};'
+        f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
+        f'{_esc(label)} <span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({count})</span></h3>'
     )
 
@@ -661,9 +712,9 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
     src_opts = "".join(f'<option value="{_esc(s)}">{_esc(s)}</option>' for s in sources)
     # Qualification allow-list chips: none selected = no filter (show all fits);
     # selecting some narrows to just those. Order = most- to least-applyable.
-    chip_style = ("padding:3px 10px;border-radius:12px;border:1px solid #d0d7de;"
-                  "background:#fff;font-size:12px;cursor:pointer;font-family:inherit;"
-                  "color:#24292f;opacity:0.55;")
+    chip_style = (f"padding:3px 10px;border-radius:12px;border:1px solid {GRID};"
+                  f"background:#fff;font-size:12px;cursor:pointer;font-family:inherit;"
+                  f"color:{INK};opacity:0.55;")
     chips = "".join(
         f'<button type="button" class="qchip" data-qual="{q}" data-on="0" '
         f'onclick="qchipToggle(this)" style="{chip_style}">{label}</button>'
@@ -671,22 +722,22 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
                          ("stretch", "Stretch"), ("reach", "Reach"))
     )
     status = (
-        '<div style="font-size:14px;color:#24292f;margin-bottom:10px;'
-        'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+        f'<div style="font-size:14px;color:{INK};margin-bottom:10px;'
+        f'font-family:{FONT_SANS};">'
         f'<b>{new_count}</b> new · <b id="queue-count">{queue_count}</b> awaiting decision · '
-        f'<a href="{board_href}" style="color:#0969da;text-decoration:none;">'
+        f'<a href="{board_href}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{pipeline_count} in your pipeline &rarr;</a></div>'
     )
     bar = (
-        '<div style="position:sticky;top:0;background:#f6f8fa;padding:12px 0;z-index:10;'
-        'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid #d0d7de;'
-        'margin-bottom:8px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+        f'<div style="position:sticky;top:0;background:{PAPER};padding:12px 0;z-index:10;'
+        f'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid {GRID};'
+        f'margin-bottom:8px;font-family:{FONT_SANS};">'
         f'<input id="q" type="search" placeholder="Search title, company, description…" '
         f'oninput="inboxFilter()" style="{_INPUT_STYLE}flex:1;min-width:200px;">'
-        f'<span style="font-size:12px;color:#57606a;">Fit:</span>{chips}'
+        f'<span style="font-size:12px;color:{MUTED};">Fit:</span>{chips}'
         f'<select id="fsource" onchange="inboxFilter()" style="{_INPUT_STYLE}">'
         f'<option value="">source: all</option>{src_opts}</select>'
-        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fall" onchange="inboxFilter()"> Show everything</label>'
         '</div>'
     )
@@ -697,8 +748,8 @@ INBOX_SCRIPT = """<script>
 function qchipToggle(el){
   el.dataset.on = el.dataset.on==='1' ? '0' : '1';
   el.style.opacity = el.dataset.on==='1' ? '1' : '0.55';
-  el.style.background = el.dataset.on==='1' ? '#ddf4ff' : '#fff';
-  el.style.borderColor = el.dataset.on==='1' ? '#54aeff' : '#d0d7de';
+  el.style.background = el.dataset.on==='1' ? '__TINT__' : '#fff';
+  el.style.borderColor = el.dataset.on==='1' ? '__BLUEPRINT_BRIGHT__' : '__GRID__';
   inboxFilter();
 }
 function inboxFilter(){
@@ -738,4 +789,4 @@ document.addEventListener('DOMContentLoaded', inboxFilter);
 // Cards swapped in via HTMX (apply/dismiss/interested/…) start visible and
 // ignore the active filters — re-run once HTMX settles so the queue drains.
 document.addEventListener('htmx:afterSettle', inboxFilter);
-</script>"""
+</script>""".replace("__TINT__", TINT).replace("__BLUEPRINT_BRIGHT__", BLUEPRINT_BRIGHT).replace("__GRID__", GRID)

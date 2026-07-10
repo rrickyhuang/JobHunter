@@ -2,7 +2,7 @@
 
 Every entry point (the scheduled daily run, ad-hoc CLI commands, and the future
 web server) calls `setup_logging()` so they all append to one persistent,
-rotating file at `logs/jobhunter.log` instead of scattering to stderr only —
+rotating file at `logs/north_arrow.log` instead of scattering to stderr only —
 giving a durable audit trail of scrapes, digests, backups, and status changes.
 
 The console handler keeps the original `LEVEL name: message` format (so the
@@ -16,7 +16,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _LOG_DIR = Path(__file__).with_name("logs")
-_LOG_FILE = _LOG_DIR / "jobhunter.log"
+_LOG_FILE = _LOG_DIR / "north_arrow.log"
 _configured = False
 
 

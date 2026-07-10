@@ -28,6 +28,8 @@ import coverletter
 import db
 import html_render
 import logutil
+from html_render import (BLUEPRINT_BRIGHT, FONT_SANS, GRID, GRID_FAINT, INK,
+                         MUTED, MUTED_LIGHT, PAPER, TINT)
 
 log = logging.getLogger("serve")
 
@@ -99,16 +101,16 @@ def _scrape_control_html(state: dict) -> str:
         return (
             f'<span id="scrape-ctl" hx-get="/scrape/status" hx-trigger="every 2s" '
             f'hx-target="#scrape-ctl" hx-swap="outerHTML" '
-            f'style="font-size:13px;color:#57606a;">'
+            f'style="font-size:13px;color:{MUTED};">'
             f'⏳ scraping… {elapsed}s (can take several minutes)</span>'
         )
     note = ""
     if state["error"]:
-        note = (f'<span style="color:#cf222e;font-size:12px;margin-left:8px;">'
+        note = (f'<span style="color:{html_render._STAGE_COLOR["denied"]};font-size:12px;margin-left:8px;">'
                 f'last run failed: {escape(state["error"][:200])}</span>')
     elif state["stats"]:
         st = state["stats"]
-        note = (f'<span style="color:#1a7f37;font-size:12px;margin-left:8px;">'
+        note = (f'<span style="color:{html_render._QUAL_COLOR["qualified"]};font-size:12px;margin-left:8px;">'
                 f'last run: +{st["new"]} new, {st["updated"]} updated, '
                 f'{st["duplicates"]} duplicates</span>')
     return (
@@ -120,10 +122,10 @@ def _scrape_control_html(state: dict) -> str:
 # Stage buttons offered on each card, in pipeline order. None == clear/not-applied.
 _STAGE_CHOICES = ("applied", "interviewing", "offer", "denied", "withdrawn")
 
-_BTN = ("display:inline-block;padding:3px 9px;margin:0 4px 4px 0;border-radius:6px;"
-        "border:1px solid #d0d7de;background:#fff;color:#24292f;font-size:12px;"
-        "cursor:pointer;font-family:inherit;")
-_BTN_ON = _BTN + "background:#0969da;color:#fff;border-color:#0969da;"
+_BTN = (f"display:inline-block;padding:3px 9px;margin:0 4px 4px 0;border-radius:6px;"
+        f"border:1px solid {GRID};background:#fff;color:{INK};font-size:12px;"
+        f"cursor:pointer;font-family:inherit;")
+_BTN_ON = _BTN + f"background:{BLUEPRINT_BRIGHT};color:#fff;border-color:{BLUEPRINT_BRIGHT};"
 
 # Shared <head> extras: htmx + the indicator CSS the cover-letter spinner uses.
 _HEAD = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
@@ -136,8 +138,8 @@ _HEAD = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
 # Global functions defined once in the outer page, not in the HTMX-swapped
 # #board fragment, so they survive every card move.
 _BOARD_HEAD = (
-    '<style>.board-dropok{background:#eef6ff !important;'
-    'outline:2px dashed #54aeff;outline-offset:-2px;}</style>'
+    f'<style>.board-dropok{{background:{TINT} !important;'
+    f'outline:2px dashed {BLUEPRINT_BRIGHT};outline-offset:-2px;}}</style>'
     '<script>'
     "function boardDragStart(ev,id){ev.dataTransfer.setData('text/plain',id);"
     "ev.dataTransfer.effectAllowed='move';}"
@@ -182,11 +184,11 @@ def _actions_html(job) -> str:
         f'hx-post="/job/{job.id}/notes" hx-trigger="keyup changed delay:800ms" '
         f'hx-target="#notes-status-{job.id}" hx-swap="innerHTML">'
         f'{escape(job.notes or "")}</textarea>'
-        f'<span id="notes-status-{job.id}" style="font-size:11px;color:#57606a;'
+        f'<span id="notes-status-{job.id}" style="font-size:11px;color:{MUTED};'
         f'margin-left:6px;"></span></div>'
     )
     return (
-        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eaeef2;">'
+        f'<div style="margin-top:10px;padding-top:10px;border-top:1px solid {GRID_FAINT};">'
         f'{stage_btns}{clear}'
         '<span style="display:inline-block;width:12px;"></span>'
         f'{interested}{dismiss}'
@@ -198,9 +200,9 @@ def _actions_html(job) -> str:
 
 
 # ── Cover-letter panel (lazily loaded into #cl-<id> on demand) ────────────────
-_CL_INPUT = ("width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid "
-             "#d0d7de;border-radius:6px;font-size:13px;font-family:inherit;")
-_CL_WORKING = ('<span class="htmx-indicator" style="color:#8250df;font-size:12px;'
+_CL_INPUT = (f"width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid "
+             f"{GRID};border-radius:6px;font-size:13px;font-family:inherit;")
+_CL_WORKING = (f'<span class="htmx-indicator" style="color:{html_render._STAGE_COLOR["interviewing"]};font-size:12px;'
                'margin-left:8px;">working… (up to ~60s)</span>')
 
 
@@ -211,7 +213,7 @@ def _cl_close_btn(job) -> str:
 
 def _cl_draft_form(job) -> str:
     return (
-        '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
+        f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
         'border-radius:8px;padding:12px;">'
         f'{_cl_close_btn(job)}'
         f'<form hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
@@ -227,14 +229,14 @@ def _cl_view(job, body: str) -> str:
     from markupsafe import escape
     path = coverletter.letter_path(job)
     return (
-        '<div style="margin-top:10px;background:#f6f8fa;border:1px solid #d0d7de;'
+        f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
         'border-radius:8px;padding:12px;">'
         f'{_cl_close_btn(job)}'
-        f'<div style="font-size:12px;color:#57606a;margin-bottom:6px;">saved: '
+        f'<div style="font-size:12px;color:{MUTED};margin-bottom:6px;">saved: '
         f'<code style="user-select:all;word-break:break-all;overflow-wrap:anywhere;">'
         f'{escape(str(path))}</code></div>'
-        f'<pre style="white-space:pre-wrap;font-family:-apple-system,Segoe UI,Roboto,'
-        f'sans-serif;font-size:13px;line-height:1.5;color:#24292f;margin:0 0 10px;'
+        f'<pre style="white-space:pre-wrap;font-family:{FONT_SANS};'
+        f'font-size:13px;line-height:1.5;color:{INK};margin:0 0 10px;'
         f'max-height:420px;overflow:auto;">{escape(body)}</pre>'
         f'<form hx-post="/job/{job.id}/coverletter/revise" hx-target="#cl-{job.id}" '
         f'hx-swap="innerHTML" hx-disabled-elt="find button">'
@@ -247,8 +249,8 @@ def _cl_view(job, body: str) -> str:
 
 def _cl_panel(job, error: str = "") -> str:
     from markupsafe import escape
-    banner = (f'<div style="margin-top:10px;background:#ffebe9;border:1px solid '
-              f'#ff818266;border-radius:8px;padding:10px;color:#82071e;font-size:13px;">'
+    banner = (f'<div style="margin-top:10px;background:#f7e4e7;border:1px solid '
+              f'#e3aab1;border-radius:8px;padding:10px;color:{html_render._STAGE_COLOR["denied"]};font-size:13px;">'
               f'{escape(error)}</div>') if error else ""
     body = coverletter.letter_body(job)
     return banner + (_cl_view(job, body) if body is not None else _cl_draft_form(job))
@@ -323,7 +325,7 @@ _BOARD_MOVES = [
 # Fixed-width columns (no grow/shrink) so they sit side by side like a real
 # kanban; the row itself scrolls horizontally when they don't all fit (desktop
 # overflow / mobile).
-_COL_STYLE = ("flex:0 0 264px;background:#f6f8fa;border:1px solid #d0d7de;"
+_COL_STYLE = (f"flex:0 0 264px;background:{PAPER};border:1px solid {GRID};"
               "border-radius:10px;padding:10px;")
 
 
@@ -341,7 +343,7 @@ def _board_card(job, followup_days: int) -> str:
     elif job.stage in ("denied", "withdrawn"):
         since = f' · {escape(job.stage)}'
     overdue = html_render.is_overdue_followup(job, followup_days)
-    followup = (f'<div style="color:#9a6700;font-size:11px;font-weight:600;'
+    followup = (f'<div style="color:{html_render._QUAL_COLOR["stretch"]};font-size:11px;font-weight:600;'
                 f'margin:2px 0 4px;">⚠ follow up — {days}d with no update</div>'
                 if overdue else "")
     moves = "".join(
@@ -350,15 +352,16 @@ def _board_card(job, followup_days: int) -> str:
         f'hx-swap="innerHTML">{label}</button>'
         for key, label in _BOARD_MOVES if key != job.stage
     )
-    border = "border:1px solid #d4a72c;" if overdue else "border:1px solid #d0d7de;"
+    border = (f"border:1px solid {html_render._QUAL_COLOR['stretch']};" if overdue
+              else f"border:1px solid {GRID};")
     return (
         f'<div draggable="true" ondragstart="boardDragStart(event, \'{job.id}\')" '
         f'style="background:#fff;{border}border-radius:8px;cursor:grab;'
         'padding:9px 11px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
-        f'<a href="{escape(job.url)}" style="color:#0969da;text-decoration:none;">'
+        f'<a href="{escape(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{escape(job.title)}</a></div>'
-        f'<div style="color:#57606a;font-size:12px;margin:1px 0 6px;">'
+        f'<div style="color:{MUTED};font-size:12px;margin:1px 0 6px;">'
         f'{escape(job.company or "Unknown")}{since}</div>'
         f'{followup}'
         f'<div>{moves}</div></div>'
@@ -373,10 +376,10 @@ def _board_html(conn) -> str:
     for _key, label, pred, drop_target in _BOARD_COLUMNS:
         members = [j for j in jobs if pred(j)]
         overdue_n = sum(1 for j in members if html_render.is_overdue_followup(j, followup_days))
-        overdue_badge = (f' <span style="color:#9a6700;font-weight:600;">⚠{overdue_n}</span>'
+        overdue_badge = (f' <span style="color:{html_render._QUAL_COLOR["stretch"]};font-weight:600;">⚠{overdue_n}</span>'
                          if overdue_n else "")
         cards = "".join(_board_card(j, followup_days) for j in members) or (
-            '<div style="color:#8b949e;font-size:12px;padding:6px;">—</div>')
+            f'<div style="color:{MUTED_LIGHT};font-size:12px;padding:6px;">—</div>')
         # Draggable-drop columns get handlers + a data-drop-target attribute
         # dragenter/leave toggle a highlight on (styled via a class, not the
         # inline style attribute, so it doesn't clobber it).
@@ -387,8 +390,8 @@ def _board_html(conn) -> str:
         ) if drop_target else ""
         cols += (
             f'<div style="{_COL_STYLE}" {drop_attrs}>'
-            f'<div style="font-weight:600;font-size:13px;color:#24292f;margin-bottom:8px;">'
-            f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span>'
+            f'<div style="font-weight:600;font-size:13px;color:{INK};margin-bottom:8px;">'
+            f'{label} <span style="color:{MUTED_LIGHT};font-weight:400;">({len(members)})</span>'
             f'{overdue_badge}</div>'
             f'{cards}</div>'
         )
@@ -403,10 +406,10 @@ def _nav(active: str) -> str:
     def link(href, label, key):
         on = key == active
         style = ("padding:6px 12px;border-radius:6px;text-decoration:none;font-size:14px;"
-                 + ("background:#0969da;color:#fff;" if on else "color:#0969da;"))
+                 + (f"background:{BLUEPRINT_BRIGHT};color:#fff;" if on else f"color:{BLUEPRINT_BRIGHT};"))
         return f'<a href="{href}" style="{style}">{label}</a>'
-    return ('<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;'
-            'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+    return (f'<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;'
+            f'font-family:{FONT_SANS};">'
             f'{link("/", "List", "list")}{link("/board", "Pipeline board", "board")}'
             '<span style="margin-left:auto;">'
             f'{_scrape_control_html(_scrape_view_state())}</span></div>')
@@ -465,7 +468,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         conn.close()
         intro = "Your triage queue — act on a card and it drops out of the list."
         resp = make_response(
-            html_render.page("JobHunter — Cockpit", intro, body, head_extra=_HEAD))
+            html_render.page("North Arrow — Cockpit", intro, body, head_extra=_HEAD))
         resp.set_cookie(_SEEN_COOKIE, seen_cookie, max_age=60 * 60 * 24 * 365,
                         samesite="Lax")
         return resp
@@ -478,7 +481,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         intro = "Your application pipeline — drag a card (or click a button) to move it."
         # Wider container so the 5 columns sit side by side on desktop; the board
         # row scrolls horizontally when they don't fit (e.g. on a phone).
-        return html_render.page("JobHunter — Pipeline", intro, body,
+        return html_render.page("North Arrow — Pipeline", intro, body,
                                 head_extra=_HEAD + _BOARD_HEAD, max_width=1400)
 
     @app.route("/board/job/<job_id>/move/<target>", methods=["POST"])
@@ -567,7 +570,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         _job_or_404(conn, job_id)
         db.set_notes(conn, job_id, request.form.get("notes", ""))
         conn.close()
-        return '<span style="color:#1a7f37;">saved ✓</span>'
+        return f'<span style="color:{html_render._QUAL_COLOR["qualified"]};">saved ✓</span>'
 
     @app.route("/job/<job_id>/coverletter")
     def cl_panel(job_id):
@@ -613,13 +616,13 @@ def create_app(db_path=db.DB_PATH) -> Flask:
 
 def main() -> None:
     logutil.setup_logging()
-    ap = argparse.ArgumentParser(description="JobHunter web cockpit.")
+    ap = argparse.ArgumentParser(description="North Arrow web cockpit.")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5001)
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
     app = create_app()
-    print(f"\n  JobHunter cockpit -> http://{args.host}:{args.port}\n")
+    print(f"\n  North Arrow cockpit -> http://{args.host}:{args.port}\n")
     # threaded so a slow request (a ~40s cover-letter draft shelling out to the
     # claude CLI) doesn't freeze the whole UI for other tabs/actions meanwhile.
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

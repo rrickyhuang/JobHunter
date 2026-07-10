@@ -1,18 +1,24 @@
-# JobHunter
+# North Arrow
 
-A personal, self-hosted job-aggregation pipeline for a Vancouver-based,
-early-career designer. It scrapes design-field job sources, normalizes and
-scores each posting against personal criteria — including estimated SkyTrain
-commute and an LLM read of genuine design-role fit — dedupes cross-source
-repeats, and delivers a ranked daily shortlist as a markdown/HTML digest
-(email + file). A companion local web cockpit turns that shortlist into an
-actual application-tracking workspace.
+A personal, self-hosted job-aggregation pipeline, built for a Vancouver-based,
+early-career designer's search but designed to be forked and pointed at your
+own. It scrapes design-field job sources, normalizes and scores each posting
+against personal criteria — including estimated SkyTrain commute and an LLM
+read of genuine design-role fit — dedupes cross-source repeats, and delivers a
+ranked daily shortlist as a markdown/HTML digest (email + file). A companion
+local web cockpit turns that shortlist into an actual application-tracking
+workspace.
 
 The goal: stop manually sifting hundreds of postings to find the few worth
 applying to.
 
-> This is a personal tool. All personal preferences live in gitignored config
-> files — the committed code contains no individual's data.
+> All personal preferences live in gitignored config files — the committed
+> code contains no individual's data, so it's safe to clone and make your own.
+> One thing to know going in: the scrapers themselves (PIBC, CSLA, municipal
+> boards, etc.) are hardcoded to Vancouver design/planning sources — pointing
+> this at a different city or field means writing new modules under
+> `scrapers/` (see `scrapers/base.py`'s `fetch(cfg)` contract), not just
+> editing config.
 
 ## How it works
 
@@ -106,6 +112,7 @@ python show.py --filter role_type=landscape_arch --filter stage!=denied   # filt
 python show.py --html              # full-DB HTML report, opens in browser
 
 python serve.py                    # local web cockpit at http://127.0.0.1:5001
+python serve.py --host 0.0.0.0     # also reachable from other devices on the same LAN (e.g. your phone), at http://<this-pc's-LAN-ip>:5001
 
 python digest.py [--no-email|--stdout]
 python addjob.py                   # paste in a job you found yourself — same scoring/enrichment pipeline
