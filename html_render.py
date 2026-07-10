@@ -423,36 +423,58 @@ def _mark_svg(size: int = 34) -> str:
 
 
 def _contour_backdrop(canvas_id: str) -> str:
-    """A procedural, sine-perturbed contour-line backdrop, bounded to and
+    """A procedural contour-line backdrop for the masthead, bounded to and
     scrolling naturally with its parent card (plain position:absolute, not
     fixed — a fixed/viewport-spanning version stayed put while the page
-    scrolled under it, which read as a floating overlay rather than part of
-    the page). Masked with a fade on all sides so the lines dissolve into
-    the card instead of cutting off at a hard edge."""
+    scrolled under it, reading as a floating overlay rather than part of the
+    page). The masthead card is short and wide, so this draws horizontal
+    wavy bands (an elevation cross-section) rather than circular rings —
+    rings drawn at a scale tuned for a tall square area collapse into
+    near-vertical slivers once squeezed into a ~70px-tall strip. Masked with
+    a fade on the left/right edges so the bands dissolve into the card
+    instead of cutting off at a hard edge."""
     return (
         f'<canvas id="{canvas_id}" aria-hidden="true" style="'
         f'position:absolute;inset:0;width:100%;height:100%;z-index:0;'
         f'pointer-events:none;'
-        f'-webkit-mask-image:radial-gradient(ellipse at center,#000 40%,transparent 85%);'
-        f'mask-image:radial-gradient(ellipse at center,#000 40%,transparent 85%);"></canvas>'
+        f'-webkit-mask-image:linear-gradient(to right,transparent,#000 15%,#000 85%,transparent);'
+        f'mask-image:linear-gradient(to right,transparent,#000 15%,#000 85%,transparent);"></canvas>'
         f'<script>(function(){{'
         f'var c=document.getElementById("{canvas_id}");if(!c)return;'
         f'var ctx=c.getContext("2d"),ink="{BLUEPRINT}";'
-        f'function ring(cx,cy,r,j,fa,fb,ph){{ctx.beginPath();var n=110;'
-        f'for(var i=0;i<=n;i++){{var t=(i/n)*Math.PI*2;'
-        f'var rr=r+Math.sin(t*fa+ph)*j+Math.sin(t*fb+ph*1.7)*(j*0.5);'
-        f'var x=cx+Math.cos(t)*rr,y=cy+Math.sin(t)*rr*0.6;'
-        f'if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}}ctx.closePath();ctx.stroke();}}'
-        f'function ridge(cx,cy,n,sp,a){{for(var i=0;i<n;i++){{'
-        f'ctx.globalAlpha=Math.max(0,a-i*(a/n));ctx.lineWidth=1;ctx.strokeStyle=ink;'
-        f'ring(cx,cy,20+i*sp,7+i*1.1,3,5,i*0.35);}}}}'
+        # Real contour lines represent constant elevation, so they can never
+        # cross — but on real terrain they also don't stay evenly spaced,
+        # they bunch up on steep slopes and spread out on gentle ones.
+        # Uniform parallel offset (constant y0 gap) reads as ripples, not a
+        # hillside. Instead each band adds i * gap(t), where gap(t) varies
+        # across x but is bounded strictly positive (amplitude < 1) — so the
+        # cumulative offset between any two bands is always a positive,
+        # spatially-varying value, guaranteeing they still never touch while
+        # the visual spacing between them breathes in and out.
+        f'function shape(t){{return Math.sin(t*Math.PI*2*1.6)'
+        f'+Math.sin(t*Math.PI*2*1.6*1.8+0.9)*0.4;}}'
+        f'function gap(t){{return 1+0.5*Math.sin(t*Math.PI*2*1.3+0.4)'
+        f'+0.25*Math.sin(t*Math.PI*2*2.6+1.1);}}'
+        f'function band(w,baseY,amp,gapAmt,i,alpha){{'
+        f'ctx.globalAlpha=alpha;ctx.lineWidth=1.2;ctx.strokeStyle=ink;ctx.beginPath();'
+        f'var n=90;for(var k=0;k<=n;k++){{var t=k/n,x=t*w;'
+        f'var y=baseY+shape(t)*amp+i*gapAmt*gap(t);'
+        f'if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}}ctx.stroke();}}'
         f'function draw(){{'
         f'var r=c.getBoundingClientRect(),w=c.width=r.width,h=c.height=r.height;'
         f'ctx.clearRect(0,0,w,h);'
-        f'ridge(w*0.2,h*0.35,10,20,0.5);'
-        f'ridge(w*0.7,h*0.6,9,18,0.4);'
+        f'var bands=6,amp=h*0.13,gapAmt=h*0.8/bands;'
+        f'for(var i=0;i<bands;i++){{'
+        f'band(w,h*0.1,amp,gapAmt,i,0.42-i*0.04);}}'
         f'ctx.globalAlpha=1;}}'
-        f'draw();window.addEventListener("resize",draw);'
+        # The script runs immediately, before the masthead content after it
+        # in the source has been parsed — measuring the container here would
+        # get a 0 height and draw into a 0-height canvas. Deferring to
+        # DOMContentLoaded (or right away if it already fired) guarantees
+        # the container has its final layout first.
+        f'if(document.readyState==="loading"){{'
+        f'document.addEventListener("DOMContentLoaded",draw);}}else{{draw();}}'
+        f'window.addEventListener("resize",draw);'
         f'}})();</script>'
     )
 
@@ -603,15 +625,15 @@ def _filter_bar(jobs: list) -> str:
         f'oninput="applyFilters()" style="{_INPUT_STYLE}flex:1;min-width:220px;">'
         f'{opts("source", sources)}{opts("role", roles)}{opts("qual", quals)}{opts("stage", stages)}'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fdq" onchange="applyFilters()"> show disqualified</label>'
+        f'<input type="checkbox" id="fdq" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show disqualified</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fdup" onchange="applyFilters()"> show duplicates</label>'
+        f'<input type="checkbox" id="fdup" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show duplicates</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fstale" onchange="applyFilters()"> show stale</label>'
+        f'<input type="checkbox" id="fstale" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show stale</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fdismissed" onchange="applyFilters()"> show dismissed</label>'
+        f'<input type="checkbox" id="fdismissed" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show dismissed</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fstaged" onchange="applyFilters()"> show in pipeline</label>'
+        f'<input type="checkbox" id="fstaged" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show in pipeline</label>'
         f'<span id="count" style="font-size:13px;color:{MUTED};margin-left:auto;"></span>'
         '</div>'
     )
@@ -818,8 +840,12 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
         f'<span style="font-size:12px;color:{MUTED};">Fit:</span>{chips}'
         f'<select id="fsource" onchange="inboxFilter()" style="{_INPUT_STYLE}">'
         f'<option value="">source: all</option>{src_opts}</select>'
-        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
-        '<input type="checkbox" id="fall" onchange="inboxFilter()"> Show everything</label>'
+        f'<label title="Reveals screened-out (disqualified), duplicate, dismissed, '
+        f'and stale (not seen recently) postings — hidden by default since none '
+        f'of them need a decision from you." '
+        f'style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;'
+        f'cursor:help;">'
+        f'<input type="checkbox" id="fall" onchange="inboxFilter()" style="accent-color:{BLUEPRINT_BRIGHT};"> Show everything</label>'
         '</div>'
     )
     return status + bar
