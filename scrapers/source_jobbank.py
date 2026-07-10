@@ -41,7 +41,17 @@ def _detail(fetcher: Fetcher, url: str) -> str:
         log.debug("Job Bank detail fetch failed for %s: %s", url, e)
         return ""
     soup = BeautifulSoup(html, "lxml")
-    main = soup.select_one(".job-posting-details-body, main, #content") or soup
+    # The details body also holds page chrome (loading spinners, apply/share
+    # widgets, "Employer details" boilerplate) around the actual content, so
+    # target the specific requirements block rather than the whole container.
+    main = soup.select_one(".main-job-posting-detail.job-posting-detail-requirements")
+    if main is None:
+        # Postings sourced from a third party (e.g. Indeed) don't get a full
+        # detail page on Job Bank — fall back to the brief info list instead
+        # of the surrounding chrome.
+        main = soup.select_one(".job-posting-brief")
+    if main is None:
+        return ""
     return main.get_text(" ", strip=True)
 
 
