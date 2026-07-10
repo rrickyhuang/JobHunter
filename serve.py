@@ -642,6 +642,9 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=5001)
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
+    if args.debug and args.host not in ("127.0.0.1", "localhost", "::1"):
+        ap.error("--debug enables an unauthenticated interactive debugger; "
+                  "refusing to pair it with --host " + args.host)
     app = create_app()
     print(f"\n  North Arrow cockpit -> http://{args.host}:{args.port}\n")
     # threaded so a slow request (a ~40s cover-letter draft shelling out to the
