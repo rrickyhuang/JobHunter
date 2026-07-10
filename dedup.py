@@ -5,15 +5,18 @@ scraping); it also runs automatically at the end of every `scrape.py --all`/
 `--source` call. Both just call `run(conn, cfg)` below.
 
 Aggregators (PIBC/CSLA) and an org's own careers board can both list the same
-posting. This groups stored jobs across DIFFERENT sources by fuzzy title +
-company match (guarded by a location or description match too) and marks all
-but one "keeper" per group as `duplicate_of` the keeper's id. Duplicates
-aren't deleted — they're just hidden from `show.py`/the digest by default,
-same treatment as `dismissed`, and `show.py --all` reveals them.
+posting, and a single aggregator can also list the same posting twice (e.g.
+re-posted under a new external id). This groups stored jobs — same- or
+cross-source — by fuzzy title match (guarded by a company or description
+match, and a location or description match) and marks all but one "keeper"
+per group as `duplicate_of` the keeper's id. Duplicates aren't deleted —
+they're just hidden from `show.py`/the digest by default, same treatment as
+`dismissed`, and `show.py --all` reveals them.
 """
 from __future__ import annotations
 
 import re
+from itertools import combinations
 
 from rapidfuzz import fuzz
 
@@ -28,12 +31,13 @@ def _normalize(s: str | None) -> str:
 
 
 def _same_group(a: Job, b: Job, cfg: dict) -> bool:
-    """Two jobs from DIFFERENT sources are the same posting if their titles
-    and companies both match strongly, AND (location matches OR the
-    description itself is a strong match) — the second guard keeps two
-    genuinely different reqs at the same employer/title from merging."""
-    if a.source == b.source:
-        return False
+    """Two jobs (same- or cross-source) are the same posting if their titles
+    match strongly, AND (companies match OR the description itself is a
+    strong match — aggregators/agencies sometimes surface a reseller's name
+    instead of the actual employer's, so a weak company match alone
+    shouldn't rule out a merge), AND (location matches OR the description is
+    a strong match — this second guard keeps two genuinely different reqs at
+    the same employer/title from merging)."""
     d = cfg.get("dedup", {})
     title_thr = d.get("title_similarity_threshold", 88)
     company_thr = d.get("company_similarity_threshold", 80)
@@ -42,21 +46,23 @@ def _same_group(a: Job, b: Job, cfg: dict) -> bool:
     if fuzz.token_sort_ratio(_normalize(a.title), _normalize(b.title)) < title_thr:
         return False
 
+    desc_ratio = fuzz.token_set_ratio((a.description or "")[:500], (b.description or "")[:500])
+
     a_co, b_co = _normalize(a.company), _normalize(b.company)
     if a_co and b_co:
-        if fuzz.token_sort_ratio(a_co, b_co) < company_thr:
-            return False
-    elif a_co != b_co:  # one blank, one not — too uncertain to merge
+        company_match = fuzz.token_sort_ratio(a_co, b_co) >= company_thr
+    else:
+        company_match = a_co == b_co  # both blank counts as a match
+    if not company_match and desc_ratio < desc_thr:
         return False
 
     if a.location_normalized and a.location_normalized == b.location_normalized:
         return True
-    desc_ratio = fuzz.token_set_ratio((a.description or "")[:500], (b.description or "")[:500])
     return desc_ratio >= desc_thr
 
 
 def find_groups(jobs: list[Job], cfg: dict) -> list[list[Job]]:
-    """Union-find over pairwise matches, restricted to different-source pairs."""
+    """Union-find over all pairwise matches (same- and cross-source)."""
     parent = {j.id: j.id for j in jobs}
 
     def find(x: str) -> str:
@@ -70,16 +76,9 @@ def find_groups(jobs: list[Job], cfg: dict) -> list[list[Job]]:
         if rx != ry:
             parent[rx] = ry
 
-    by_source: dict[str, list[Job]] = {}
-    for j in jobs:
-        by_source.setdefault(j.source, []).append(j)
-    sources = list(by_source.keys())
-    for i, src_a in enumerate(sources):
-        for src_b in sources[i + 1:]:
-            for a in by_source[src_a]:
-                for b in by_source[src_b]:
-                    if _same_group(a, b, cfg):
-                        union(a.id, b.id)
+    for a, b in combinations(jobs, 2):
+        if _same_group(a, b, cfg):
+            union(a.id, b.id)
 
     groups: dict[str, list[Job]] = {}
     for j in jobs:

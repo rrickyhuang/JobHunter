@@ -29,7 +29,7 @@ import db
 import html_render
 import logutil
 from html_render import (BLUEPRINT_BRIGHT, FONT_SANS, GRID, GRID_FAINT, INK,
-                         MUTED, MUTED_LIGHT, PAPER, TINT)
+                         MUTED, MUTED_LIGHT, PAPER, PAPER_RAISED, TINT)
 
 log = logging.getLogger("serve")
 
@@ -123,7 +123,7 @@ def _scrape_control_html(state: dict) -> str:
 _STAGE_CHOICES = ("applied", "interviewing", "offer", "denied", "withdrawn")
 
 _BTN = (f"display:inline-block;padding:3px 9px;margin:0 4px 4px 0;border-radius:6px;"
-        f"border:1px solid {GRID};background:#fff;color:{INK};font-size:12px;"
+        f"border:1px solid {GRID};background:{PAPER_RAISED};color:{INK};font-size:12px;"
         f"cursor:pointer;font-family:inherit;")
 _BTN_ON = _BTN + f"background:{BLUEPRINT_BRIGHT};color:#fff;border-color:{BLUEPRINT_BRIGHT};"
 
@@ -356,7 +356,7 @@ def _board_card(job, followup_days: int) -> str:
               else f"border:1px solid {GRID};")
     return (
         f'<div draggable="true" ondragstart="boardDragStart(event, \'{job.id}\')" '
-        f'style="background:#fff;{border}border-radius:8px;cursor:grab;'
+        f'style="background:{PAPER_RAISED};{border}border-radius:8px;cursor:grab;'
         'padding:9px 11px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
         f'<a href="{escape(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'

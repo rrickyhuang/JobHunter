@@ -92,10 +92,12 @@ scoring:
     non_full_time: 0.5            # same, for part_time/casual/on_call/seasonal/temporary postings
     # Seniority/experience fit vs the candidate (enrichment's qualification verdict).
     # Without this a senior/director role they can't get outranks an entry-level
-    # one they can. Multiplicative; qualified/overqualified/unknown are NOT docked.
+    # one they can. Multiplicative; qualified/overqualified/unknown are NOT docked
+    # (overqualified means "same field, too junior for their training" — fine).
     qualification:
-      stretch: 0.85               # plausible with a good pitch — mild dock
-      reach:   0.5                # needs years/credentials they lack — heavy dock, stays visible
+      stretch:     0.85           # plausible with a good pitch — mild dock
+      reach:       0.5            # needs years/credentials they lack — heavy dock, stays visible
+      wrong_field: 0.15           # different profession entirely — near-kill, stays visible
 
 # ── Hard disqualifiers (force score to 0) ────────────────────────────────────
 # Role-type red flags above are soft penalties, not kills. Out-of-metro AND

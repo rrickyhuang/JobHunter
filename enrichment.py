@@ -29,7 +29,7 @@ EMPLOYMENT_TYPES = "full_time, part_time, casual, on_call, seasonal, temporary, 
 
 _VALID_ROLE = set(r.strip() for r in ROLE_TYPES.split(","))
 _VALID_EMPLOYMENT = set(e.strip() for e in EMPLOYMENT_TYPES.split(","))
-_VALID_QUAL = {"qualified", "stretch", "reach", "overqualified"}
+_VALID_QUAL = {"qualified", "stretch", "reach", "overqualified", "wrong_field"}
 _VALID_SENIORITY = {"entry", "junior", "intermediate", "senior", "director"}
 
 
@@ -54,11 +54,19 @@ def build_prompt(job, cfg: dict) -> str:
 {_profile_block(profile)}
 
 === QUALIFICATION RUBRIC ===
-Map the posting's seniority to a verdict for THIS candidate (an early-career 2025 design grad, ~1 yr non-design pro experience, no professional registration):
+First check whether the posting is even in the candidate's FIELD (design/spatial-planning/architecture,
+or a design-adjacent ops role — see profile). If the role's core discipline is unrelated to that field
+entirely (e.g. software engineering, accounting, nursing, sales) regardless of its seniority, the verdict
+is "wrong_field" — do NOT use "overqualified" for this; "overqualified" is reserved for same-field
+seniority mismatches (see below), not different-profession mismatches.
+
+If it IS in the candidate's field, map the posting's seniority to a verdict for THIS candidate
+(an early-career 2025 design grad, ~1 yr non-design pro experience, no professional registration):
   - entry / junior / intern / coordinator / "designer I"  -> "qualified"
   - intermediate / "2-4 yrs"                               -> "stretch"
   - senior / principal / director / "5+ yrs"               -> "reach"
-  - clearly far below their training                       -> "overqualified"
+  - a design role clearly far below their training (e.g. entry-level
+    admin/production work a senior designer wouldn't take)  -> "overqualified"
 Roles hard-requiring registration (RPP/MCIP, BCSLA) the candidate lacks: keep the verdict but add the credential to missing_requirements (do NOT auto-fail).
 
 === JOB POSTING ===
@@ -84,7 +92,7 @@ Description:
   "seniority": "entry|junior|intermediate|senior|director",
   "required_years": number or null,
   "required_credentials": ["e.g. RPP", "BCSLA"],
-  "qualification": "qualified|stretch|reach|overqualified",
+  "qualification": "qualified|stretch|reach|overqualified|wrong_field",
   "missing_requirements": ["specific gaps for this candidate"],
   "autonomy_evidence": "one sentence quoting/paraphrasing the design-latitude signal (or its absence)",
   "fit_summary": "2-sentence plain verdict on fit for this candidate"
