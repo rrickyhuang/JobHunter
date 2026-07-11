@@ -123,6 +123,18 @@ python mark.py <row-# or id> [<row-# or id> ...] <applied|interviewing|offer|den
 python help.py                     # consolidated command reference (pulled from each script's docstring)
 ```
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Unit tests for the deterministic pieces — scoring, location/salary/dedup
+parsing, commute bucket logic, config validation, the DB layer (in-memory
+SQLite), and scraper HTML/JSON parsing (mocked fixtures, no network). No
+coverage yet for the LLM-enrichment calls or the live scrapers themselves.
+
 ## Key files
 
 - `config.yaml` — all tunable settings + personal `profile` (gitignored; copy from `config.example.yaml`)
