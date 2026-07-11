@@ -179,14 +179,18 @@ def run(sources: list[str], cfg: dict, *, dry_run: bool = False) -> dict:
             continue
         for raw in raws:
             stats["fetched"] += 1
-            job = raw_to_job(raw, cfg)
-            _maybe_enrich(conn, job, cfg, stats, allow_api=not dry_run)
-            job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
-            if dry_run:
-                is_new = db.get(conn, job.id) is None
-                previews.append((is_new, job))
-            else:
-                is_new = db.upsert(conn, job)
+            try:
+                job = raw_to_job(raw, cfg)
+                _maybe_enrich(conn, job, cfg, stats, allow_api=not dry_run)
+                job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
+                if dry_run:
+                    is_new = db.get(conn, job.id) is None
+                    previews.append((is_new, job))
+                else:
+                    is_new = db.upsert(conn, job)
+            except Exception as e:  # noqa: BLE001
+                log.error("skipping %s item %r: %s", name, raw.get("external_id"), e)
+                continue
             stats["new" if is_new else "updated"] += 1
     if not dry_run:
         dedup_stats = dedup.run(conn, cfg)
