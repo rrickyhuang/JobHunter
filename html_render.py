@@ -821,10 +821,11 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
 
 
 # Each inbox group's swatch reuses a color already meaningful elsewhere in
-# the app, rather than inventing new ones: Saved matches the star icon,
-# New matches the NEW badge, and the noise groups match their own pills.
+# the app, rather than inventing new ones: New matches the NEW badge, and
+# the noise groups match their own pills. Saved has no swatch here — its
+# label already carries a ★, which _grp_header colors directly instead of
+# also showing a redundant square next to it.
 _INBOX_GROUP_COLOR = {
-    "★ Saved": _QUAL_COLOR["stretch"],
     "New to triage": _QUAL_COLOR["qualified"],
     "Backlog": MUTED,
     "Screened out": _STAGE_COLOR["denied"],
@@ -835,12 +836,16 @@ _INBOX_GROUP_COLOR = {
 
 
 def _grp_header(label: str, count: int, *, noise: bool) -> str:
+    lead = ""
+    if label.startswith("★ "):
+        lead = f'<span style="color:{_QUAL_COLOR["stretch"]};">★</span> '
+        label = label[2:]
     return (
         f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
         f'style="margin:22px 0 10px;font-family:{FONT_MONO};font-size:19px;'
         f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
-        f'{_swatch(_INBOX_GROUP_COLOR.get(label))}{_esc(label)} '
+        f'{lead}{_swatch(_INBOX_GROUP_COLOR.get(label))}{_esc(label)} '
         f'<span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({count})</span></h3>'
     )
