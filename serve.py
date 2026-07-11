@@ -306,6 +306,47 @@ def _card(job, row_no: int) -> str:
         dom_id=f"job-{job.id}", actions_html=_actions_html(job), stale_days=_stale_days())
 
 
+# ── Server-side list filtering/pagination ───────────────────────────────────
+# See html_render.job_matches_filter / inbox_cards_html. Filters live in the
+# query string (?q=&source=&qual=&show_all=) so a filtered view round-trips
+# through /cards instead of the old approach of rendering every job (incl. all
+# the normally-hidden noise groups) on every load and hiding most of it with
+# CSS.
+def _parse_filters() -> dict:
+    return {
+        "q": request.args.get("q", "").strip().lower(),
+        "source": request.args.get("source", "").strip(),
+        "quals": [q for q in request.args.getlist("qual") if q],
+        "show_all": request.args.get("show_all", "") in ("1", "true", "on"),
+    }
+
+
+def _filters_qs(filters: dict) -> str:
+    from urllib.parse import urlencode
+    parts = []
+    if filters["q"]:
+        parts.append(("q", filters["q"]))
+    if filters["source"]:
+        parts.append(("source", filters["source"]))
+    parts.extend(("qual", q) for q in filters["quals"])
+    if filters["show_all"]:
+        parts.append(("show_all", "1"))
+    return urlencode(parts)
+
+
+def _filtered_groups(jobs: list, filters: dict, new_since):
+    """(queue_groups, noise_groups, pipeline) for the given filters. Noise
+    groups come back empty unless show_all is set — no point computing HTML
+    for jobs the view won't render at all."""
+    filtered = [j for j in jobs if html_render.job_matches_filter(
+        j, q=filters["q"], source=filters["source"], quals=filters["quals"])]
+    queue_groups, noise_groups, pipeline = html_render.inbox_partition(
+        filtered, _stale_days(), new_since=new_since)
+    if not filters["show_all"]:
+        noise_groups = []
+    return queue_groups, noise_groups, pipeline
+
+
 # ── Pipeline board (kanban) ──────────────────────────────────────────────────
 # Columns across the application lifecycle: (key, label, predicate, drop_target).
 # drop_target is the /board/job/<id>/move/<target> value a card dropped into
@@ -485,21 +526,28 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                         order_by="score DESC")
         row_of = {j.id: i for i, j in enumerate(jobs, 1)}
         card_fn = lambda j: _card(j, row_of[j.id])
-        # One partition drives both the header counts and the rendered cards,
-        # so the two can't disagree. The inbox is a decision queue: it leads
-        # with what still needs a call, hides handled/screened-out jobs behind
-        # "Show everything", and leaves in-progress applications to the board.
-        # "New to triage" = arrived since you last sat down (see marker below).
+        # The inbox is a decision queue: it leads with what still needs a
+        # call, hides handled/screened-out jobs behind "Show everything", and
+        # leaves in-progress applications to the board. "New to triage" =
+        # arrived since you last sat down (see marker below).
         new_since, seen_cookie = _new_since_marker()
-        queue_groups, noise_groups, pipeline = html_render.inbox_partition(
+        # Header counts are global/unfiltered — a stable orientation figure,
+        # not scoped to whatever search happens to be active in #cards.
+        all_queue_groups, _all_noise, all_pipeline = html_render.inbox_partition(
             jobs, _stale_days(), new_since=new_since)
-        new_count = sum(len(m) for label, m in queue_groups if label == "New to triage")
-        queue_count = sum(len(m) for _label, m in queue_groups)
-        pipeline_count = sum(1 for j in pipeline if j.stage in html_render.ACTIVE_STAGES)
+        new_count = sum(len(m) for label, m in all_queue_groups if label == "New to triage")
+        queue_count = sum(len(m) for _label, m in all_queue_groups)
+        pipeline_count = sum(1 for j in all_pipeline if j.stage in html_render.ACTIVE_STAGES)
+        # A bookmarked/shared/reloaded filtered URL (see INBOX_SCRIPT's
+        # history.replaceState) should render already-filtered on first paint,
+        # not flash unfiltered then snap to filtered.
+        filters = _parse_filters()
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
         controls = html_render.inbox_controls(
             jobs, new_count=new_count, queue_count=queue_count,
-            pipeline_count=pipeline_count)
-        cards = html_render.inbox_cards_html(queue_groups, noise_groups, card_fn)
+            pipeline_count=pipeline_count, filters=filters)
+        cards = html_render.inbox_cards_html(
+            queue_groups, noise_groups, card_fn, qs=_filters_qs(filters))
         body = (_nav("list") + controls
                 + f'<div id="cards">{cards}</div>'
                 + html_render.INBOX_SCRIPT)
@@ -510,6 +558,50 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         resp.set_cookie(_SEEN_COOKIE, seen_cookie, max_age=60 * 60 * 24 * 365,
                         samesite="Lax")
         return resp
+
+    @app.route("/cards")
+    def cards_fragment():
+        """Re-render just #cards for the current filters — see INBOX_SCRIPT's
+        reloadCards(), fired on every search/fit/source/show-all change."""
+        conn = get_conn()
+        jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                        order_by="score DESC")
+        row_of = {j.id: i for i, j in enumerate(jobs, 1)}
+        card_fn = lambda j: _card(j, row_of[j.id])
+        new_since, _cookie = _new_since_marker()
+        filters = _parse_filters()
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
+        html = html_render.inbox_cards_html(
+            queue_groups, noise_groups, card_fn, qs=_filters_qs(filters))
+        conn.close()
+        return html
+
+    @app.route("/cards/more")
+    def cards_more():
+        """Next page of one paginated group (see html_render.INBOX_PAGE_SIZE),
+        respecting whatever filters are currently active."""
+        slug = request.args.get("group", "")
+        try:
+            offset = int(request.args.get("offset", "0"))
+        except ValueError:
+            abort(400)
+        label = next((l for l, s in html_render._PAGINATED_GROUP_SLUGS.items() if s == slug), None)
+        if label is None:
+            abort(404)
+        conn = get_conn()
+        jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                        order_by="score DESC")
+        row_of = {j.id: i for i, j in enumerate(jobs, 1)}
+        new_since, _cookie = _new_since_marker()
+        filters = _parse_filters()
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
+        members = dict(queue_groups + noise_groups).get(label, [])
+        conn.close()
+        page = members[offset:offset + html_render.INBOX_PAGE_SIZE]
+        cards_html = "".join(_card(j, row_of[j.id]) for j in page)
+        remaining = len(members) - (offset + len(page))
+        return cards_html + html_render._load_more_btn(
+            slug, _filters_qs(filters), offset + len(page), remaining)
 
     @app.route("/board")
     def board():

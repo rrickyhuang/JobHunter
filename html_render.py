@@ -765,6 +765,21 @@ def _first_seen_after(job, cutoff: datetime | None) -> bool:
     return seen > cutoff
 
 
+def job_matches_filter(job, *, q: str = "", source: str = "", quals: list[str] | None = None) -> bool:
+    """Search/source/fit filters, applied server-side against the full job
+    list (see serve.py's /cards) instead of hiding pre-rendered DOM nodes.
+    `q` and `source` are expected pre-lowered/pre-stripped by the caller."""
+    if q:
+        searchable = " ".join(filter(None, [job.title, job.company, job.role_type, job.description])).lower()
+        if q not in searchable:
+            return False
+    if source and job.source != source:
+        return False
+    if quals and (job.qualification or "") not in quals:
+        return False
+    return True
+
+
 def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
                     new_since: datetime | None = None):
     """Assign every job to exactly one inbox bucket, most-actionable first.
@@ -851,36 +866,94 @@ def _grp_header(label: str, count: int, *, noise: bool) -> str:
     )
 
 
-def inbox_cards_html(queue_groups, noise_groups, card_fn) -> str:
-    """Render the queue groups (visible) then the noise groups (hidden by
-    default via INBOX_SCRIPT). Counts in the headers are live — the script
-    rewrites them as cards drain — so the server-rendered number is just the
-    starting value."""
+# Groups big enough to matter get capped at INBOX_PAGE_SIZE with a server-side
+# "Load more" button (see serve.py's /cards/more) instead of rendering — and
+# shipping to the browser — every job up front. Saved/New/pipeline stay
+# unpaginated: they're small by construction (things you've flagged or that
+# just arrived), so pagination there would just be friction.
+INBOX_PAGE_SIZE = 60
+_PAGINATED_GROUP_SLUGS = {
+    "Backlog": "backlog",
+    "Screened out": "screened",
+    "Duplicates": "duplicates",
+    "Dismissed": "dismissed",
+    "Likely closed (stale)": "stale",
+}
+
+
+def _load_more_btn(slug: str, qs: str, offset: int, remaining: int) -> str:
+    if remaining <= 0:
+        return ""
+    sep = "&" if qs else ""
+    return (
+        f'<button type="button" style="display:block;margin:10px 0;padding:6px 14px;'
+        f'border:1px solid {GRID};background:{PAPER_RAISED};color:{INK};font-size:13px;'
+        f'cursor:pointer;font-family:inherit;" '
+        f'hx-get="/cards/more?group={slug}{sep}{qs}&offset={offset}" '
+        f'hx-target="this" hx-swap="outerHTML">'
+        f'Load more ({remaining} left)</button>'
+    )
+
+
+def inbox_cards_html(queue_groups, noise_groups, card_fn, *, qs: str = "") -> str:
+    """Render the queue groups (visible) then the noise groups (empty unless
+    `show_all` was set — see serve.py). Large groups are capped at
+    INBOX_PAGE_SIZE with a 'Load more' button; `qs` is the current
+    q/source/qual/show_all query string, threaded through so 'Load more'
+    fetches respect whatever filter produced this render."""
     parts = []
     for groups, noise in ((queue_groups, False), (noise_groups, True)):
         for label, members in groups:
             parts.append(_grp_header(label, len(members), noise=noise))
-            parts.append("".join(card_fn(j) for j in members))
+            slug = _PAGINATED_GROUP_SLUGS.get(label)
+            if slug:
+                shown = members[:INBOX_PAGE_SIZE]
+                parts.append("".join(card_fn(j) for j in shown))
+                parts.append(_load_more_btn(slug, qs, len(shown), len(members) - len(shown)))
+            else:
+                parts.append("".join(card_fn(j) for j in members))
     return "".join(parts)
 
 
 def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
-                   pipeline_count: int, board_href: str = "/board") -> str:
+                   pipeline_count: int, board_href: str = "/board",
+                   filters: dict | None = None) -> str:
     """The status line ('X new · Y awaiting decision · Z in your pipeline →')
     plus a lean filter bar: search, a 'Fit' allow-list of qualification chips,
     a source dropdown, and a single 'Show everything' escape hatch that reveals
     the noise sections. Deliberately fewer knobs than the report's filter bar —
-    the queue's whole point is that the useful default needs no fiddling."""
+    the queue's whole point is that the useful default needs no fiddling.
+
+    Filtering is server-side (see serve.py's /cards): every control change
+    re-fetches #cards from the server instead of hiding pre-rendered DOM
+    nodes, so `filters` (the q/source/quals/show_all currently in effect) is
+    threaded back in to pre-fill these controls on a fresh page load —
+    otherwise reloading a filtered, pushState-shared URL would silently drop
+    back to an unfiltered view even though #cards itself stayed filtered.
+    The status line's counts are deliberately NOT filtered by these controls —
+    they're a stable orientation figure, not scoped to whatever search is active."""
+    f = filters or {}
+    q_val = f.get("q", "")
+    source_val = f.get("source", "")
+    quals_on = set(f.get("quals") or [])
+    show_all_on = bool(f.get("show_all"))
+
     sources = sorted({j.source for j in jobs if j.source})
-    src_opts = "".join(f'<option value="{_esc(s)}">{_esc(s)}</option>' for s in sources)
+    src_opts = "".join(
+        f'<option value="{_esc(s)}"{" selected" if s == source_val else ""}>{_esc(s)}</option>'
+        for s in sources
+    )
     # Qualification allow-list chips: none selected = no filter (show all fits);
     # selecting some narrows to just those. Order = most- to least-applyable.
     chip_style = (f"padding:3px 10px;border:1px solid {GRID};"
                   f"background:{PAPER_RAISED};font-size:12px;cursor:pointer;font-family:inherit;"
                   f"color:{INK};opacity:0.55;")
+    chip_style_on = (f"padding:3px 10px;border:1px solid {BLUEPRINT_BRIGHT};"
+                     f"background:{TINT};font-size:12px;cursor:pointer;font-family:inherit;"
+                     f"color:{INK};opacity:1;")
     chips = "".join(
-        f'<button type="button" class="qchip" data-qual="{q}" data-on="0" '
-        f'onclick="qchipToggle(this)" style="{chip_style}">{label}</button>'
+        f'<button type="button" class="qchip" data-qual="{q}" data-on="{1 if q in quals_on else 0}" '
+        f'onclick="qchipToggle(this)" style="{chip_style_on if q in quals_on else chip_style}">{label}</button>'
         for q, label in (("qualified", "Qualified"), ("overqualified", "Overqualified"),
                          ("stretch", "Stretch"), ("reach", "Reach"))
     )
@@ -896,65 +969,64 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
         f'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid {GRID};'
         f'margin-bottom:8px;font-family:{FONT_SANS};">'
         f'<input id="q" type="search" placeholder="Search title, company, description…" '
-        f'oninput="inboxFilter()" style="{_INPUT_STYLE}flex:1;min-width:200px;">'
+        f'value="{_esc(q_val)}" style="{_INPUT_STYLE}flex:1;min-width:200px;">'
         f'<span style="font-size:12px;color:{MUTED};">Fit:</span>{chips}'
-        f'<select id="fsource" onchange="inboxFilter()" style="{_INPUT_STYLE}">'
+        f'<select id="fsource" style="{_INPUT_STYLE}">'
         f'<option value="">source: all</option>{src_opts}</select>'
         f'<label title="Reveals screened-out (disqualified), duplicate, dismissed, '
         f'and stale (not seen recently) postings — hidden by default since none '
         f'of them need a decision from you." '
         f'style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;'
         f'cursor:help;">'
-        f'<input type="checkbox" id="fall" onchange="inboxFilter()" style="accent-color:{BLUEPRINT_BRIGHT};"> Show everything</label>'
+        f'<input type="checkbox" id="fall" {"checked" if show_all_on else ""} '
+        f'style="accent-color:{BLUEPRINT_BRIGHT};"> Show everything</label>'
         '</div>'
     )
     return status + bar
 
 
 INBOX_SCRIPT = """<script>
+function cardsQS(){
+  var p = new URLSearchParams();
+  var q = (document.getElementById('q').value || '').trim();
+  if (q) p.set('q', q);
+  var src = document.getElementById('fsource').value;
+  if (src) p.set('source', src);
+  document.querySelectorAll('.qchip[data-on="1"]').forEach(function(c){ p.append('qual', c.dataset.qual); });
+  if (document.getElementById('fall').checked) p.set('show_all', '1');
+  return p.toString();
+}
+function reloadCards(){
+  var qs = cardsQS();
+  htmx.ajax('GET', '/cards' + (qs ? '?' + qs : ''), {target: '#cards', swap: 'innerHTML'});
+  history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
 function qchipToggle(el){
   el.dataset.on = el.dataset.on==='1' ? '0' : '1';
   el.style.opacity = el.dataset.on==='1' ? '1' : '0.55';
   el.style.background = el.dataset.on==='1' ? '__TINT__' : '__PAPER_RAISED__';
   el.style.borderColor = el.dataset.on==='1' ? '__BLUEPRINT_BRIGHT__' : '__GRID__';
-  inboxFilter();
+  reloadCards();
 }
-function inboxFilter(){
-  var q=(document.getElementById('q').value||'').toLowerCase().trim();
-  var src=document.getElementById('fsource').value;
-  var showAll=document.getElementById('fall').checked;
-  var quals=[];
-  document.querySelectorAll('.qchip[data-on="1"]').forEach(function(c){quals.push(c.dataset.qual);});
-  document.querySelectorAll('.job-card').forEach(function(c){
-    var ok=true;
-    // A staged job belongs to the pipeline board, never the queue — so a card
-    // that just became staged via an action hides itself (the "drain").
-    if(c.dataset.stage) ok=false;
-    if(q && c.dataset.search.indexOf(q)<0) ok=false;
-    if(src && c.dataset.source!==src) ok=false;
-    if(quals.length && quals.indexOf(c.dataset.qual)<0) ok=false;
-    if(!showAll && (c.dataset.dq==='1'||c.dataset.dup==='1'||
-                    c.dataset.dismissed==='1'||c.dataset.stale==='1')) ok=false;
-    c.style.display = ok ? '' : 'none';
-  });
-  // Live-update each group's header count from what's actually visible, hide
-  // emptied groups, and keep the 'awaiting decision' total honest as cards drain.
-  var queueN=0;
-  document.querySelectorAll('h3.grp').forEach(function(h){
-    var n=0, next=h.nextElementSibling;
-    while(next && !(next.tagName==='H3' && next.classList.contains('grp'))){
-      if(next.classList && next.classList.contains('job-card') && next.style.display!=='none') n++;
-      next=next.nextElementSibling;
-    }
-    var span=h.querySelector('.grp-n'); if(span) span.textContent='('+n+')';
-    h.style.display = n ? '' : 'none';
-    if(h.dataset.noise==='0') queueN+=n;
-  });
-  var qc=document.getElementById('queue-count'); if(qc) qc.textContent=queueN;
-}
-document.addEventListener('DOMContentLoaded', inboxFilter);
-// Cards swapped in via HTMX (apply/dismiss/interested/…) start visible and
-// ignore the active filters — re-run once HTMX settles so the queue drains.
-document.addEventListener('htmx:afterSettle', inboxFilter);
+var _qTimer = null;
+document.getElementById('q').addEventListener('input', function(){
+  clearTimeout(_qTimer);
+  _qTimer = setTimeout(reloadCards, 400);
+});
+document.getElementById('fsource').addEventListener('change', reloadCards);
+document.getElementById('fall').addEventListener('change', reloadCards);
+// A card swapped in via HTMX (stage/dismiss button) that no longer belongs on
+// the list — staged (the pipeline board owns it now) or dismissed while
+// "Show everything" is off — removes itself instead of lingering until the
+// next filter reload. Re-fetch by id rather than trusting ev.detail.target:
+// for an outerHTML swap htmx's afterSettle target is the OLD (now-detached)
+// element, whose dataset still reflects the pre-swap state.
+document.addEventListener('htmx:afterSettle', function(ev){
+  var t = ev.detail && ev.detail.target;
+  var el = t && t.id ? document.getElementById(t.id) : null;
+  if (!el || !el.classList || !el.classList.contains('job-card')) return;
+  var showAll = document.getElementById('fall').checked;
+  if (el.dataset.stage || (!showAll && el.dataset.dismissed === '1')) el.remove();
+});
 </script>""".replace("__TINT__", TINT).replace("__BLUEPRINT_BRIGHT__", BLUEPRINT_BRIGHT) \
    .replace("__GRID__", GRID).replace("__PAPER_RAISED__", PAPER_RAISED)
