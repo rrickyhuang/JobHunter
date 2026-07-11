@@ -17,7 +17,7 @@ _METRO = [
     "port coquitlam", "surrey", "delta", "tsawwassen", "ladner",
     "langley", "maple ridge", "pitt meadows", "white rock",
     "bowen island", "anmore", "belcarra", "lions bay",
-    "metro vancouver", "lower mainland", "bc, canada", "british columbia",
+    "metro vancouver", "lower mainland",
 ]
 _REMOTE = ["remote", "work from home", "wfh", "anywhere", "fully remote"]
 _HYBRID = ["hybrid", "flexible location", "partially remote"]
