@@ -20,6 +20,90 @@ ENV_PATH = ROOT / ".env"
 load_dotenv(ENV_PATH)
 
 
+class ConfigError(Exception):
+    """config.yaml is missing or malformed. Raised eagerly at load time so a
+    typo surfaces immediately instead of as an opaque KeyError deep into a run."""
+
+
+# Dotted paths every downstream module indexes directly (cfg["a"]["b"], not
+# cfg.get(...)) and would otherwise KeyError on far from where the mistake was
+# made. Keep in sync with direct cfg[...] accesses across the codebase.
+_REQUIRED_PATHS = [
+    "search_queries",
+    "commute",
+    "commute.home_station",
+    "commute.score_buckets",
+    "commute.remote_score",
+    "commute.unknown_location_score",
+    "commute.walk_speed_kmh",
+    "commute.minutes_per_station",
+    "commute.google_maps",
+    "scoring",
+    "scoring.weights",
+    "scoring.preferences",
+    "scoring.preferences.salary_floor",
+    "scoring.preferences.salary_target",
+    "delivery",
+    "delivery.min_score_for_digest",
+    "enrichment",
+]
+
+# scorer.py's weighted sum (`breakdown[k] * weights[k] for k in weights`) only
+# ever populates these six breakdown components — any other key under
+# scoring.weights KeyErrors mid-scoring instead of at load time.
+_KNOWN_WEIGHT_KEYS = {"commute", "role_type", "design_autonomy", "mixed_role", "salary", "role_quality"}
+
+
+def _get_path(cfg: dict, path: str):
+    node = cfg
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            raise KeyError(path)
+        node = node[part]
+    return node
+
+
+def _validate(cfg: dict) -> None:
+    if not isinstance(cfg, dict):
+        raise ConfigError("config.yaml is empty or not a mapping — check it against config.example.yaml")
+
+    problems: list[str] = []
+    for path in _REQUIRED_PATHS:
+        try:
+            _get_path(cfg, path)
+        except KeyError:
+            problems.append(f"missing {path!r}")
+
+    try:
+        weights = _get_path(cfg, "scoring.weights")
+        if isinstance(weights, dict):
+            unknown = sorted(set(weights) - _KNOWN_WEIGHT_KEYS)
+            if unknown:
+                problems.append(
+                    f"scoring.weights has unrecognized key(s) {unknown} — "
+                    f"expected a subset of {sorted(_KNOWN_WEIGHT_KEYS)}"
+                )
+    except KeyError:
+        pass  # already reported above
+
+    try:
+        buckets = _get_path(cfg, "commute.score_buckets")
+        if not isinstance(buckets, list) or not buckets:
+            problems.append("commute.score_buckets must be a non-empty list")
+        else:
+            for i, b in enumerate(buckets):
+                if not isinstance(b, dict) or "max_min" not in b or "score" not in b:
+                    problems.append(f"commute.score_buckets[{i}] must have 'max_min' and 'score'")
+    except KeyError:
+        pass  # already reported above
+
+    if problems:
+        raise ConfigError(
+            "config.yaml is missing or malformed:\n  - " + "\n  - ".join(problems)
+            + "\nCompare against config.example.yaml."
+        )
+
+
 @lru_cache(maxsize=1)
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
@@ -30,7 +114,9 @@ def load_config() -> dict:
             "    cp config.example.yaml config.yaml      (macOS/Linux)"
         )
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    _validate(cfg)
+    return cfg
 
 
 def env(key: str, default: str | None = None, *, required: bool = False) -> str | None:
