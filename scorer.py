@@ -14,7 +14,11 @@ from there so it doesn't re-geocode.
 """
 from __future__ import annotations
 
+import logging
+
 from models import Job
+
+log = logging.getLogger("scorer")
 
 # Enrichment-supplied booleans map to component scores as True->1, None->0.5,
 # False->0 (None = "we don't know yet", so don't punish).
@@ -41,8 +45,11 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     breakdown: dict = {}
 
     # ── COMMUTE (precomputed upstream) ──────────────────────────────────────
-    breakdown["commute"] = float(job.score_breakdown.get("commute", 0.5)) \
-        if isinstance(job.score_breakdown, dict) else 0.5
+    has_commute = isinstance(job.score_breakdown, dict) and "commute" in job.score_breakdown
+    if not has_commute:
+        log.warning("job %s has no precomputed commute score — defaulting to neutral 0.5; "
+                    "the commute.estimate() step upstream may have been skipped", job.id)
+    breakdown["commute"] = float(job.score_breakdown["commute"]) if has_commute else 0.5
 
     # ── ROLE TYPE (tiered: core design > other design > adjacent) ───────────
     role_scores = sc.get("role_type_scores", {})
