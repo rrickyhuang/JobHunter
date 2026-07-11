@@ -109,8 +109,12 @@ def fetch(cfg: dict) -> list[dict]:
                 log.warning("BCJobs list fetch failed for %r page %d: %s", kw, page, e)
                 break
             for item in data.get("data", []):
-                ext = str(item["id"])
-                seen.setdefault(ext, item["url"])
+                try:
+                    ext = str(item["id"])
+                    seen.setdefault(ext, item["url"])
+                except KeyError as e:
+                    log.debug("BCJobs list item missing expected field %s: %r", e, item)
+                    continue
             if page >= data.get("paging", {}).get("pages", 0):
                 break
 
