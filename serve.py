@@ -168,8 +168,14 @@ def _actions_html(job) -> str:
     )
     clear = (f'<button style="{_BTN}" {hx(id=job.id, path="stage/clear")}>Clear</button>'
              if job.stage else "")
+    # Starring moves the card between cockpit groups (into/out of "★ Saved"),
+    # not just its own styling — a plain outerHTML swap would restyle it in
+    # place but leave it stranded in its old group until the next full
+    # reload. hx-swap="none" + reloadCards() re-fetches the whole #cards
+    # list instead, so the card actually relocates immediately.
     interested = (f'<button style="{_BTN_ON if (job.saved and not job.stage) else _BTN}" '
-                  f'{hx(id=job.id, path="interested")}>Interested</button>')
+                  f'hx-post="/job/{job.id}/interested" hx-swap="none" '
+                  f'hx-on::after-request="reloadCards()">Interested</button>')
     dismiss = (f'<button style="{_BTN_ON if job.dismissed else _BTN}" '
                f'{hx(id=job.id, path="dismiss")}>Dismiss</button>')
 
