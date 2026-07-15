@@ -424,7 +424,7 @@ def _board_card(job, followup_days: int) -> str:
         f'style="background:{PAPER_RAISED};{border}border-left:3px solid {qual_color};cursor:grab;'
         'padding:9px 9px 9px 8px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
-        f'<a href="{escape(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
+        f'<a href="{html_render._safe_href(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{escape(job.title)}</a></div>'
         f'<div style="color:{MUTED};font-size:12px;margin:1px 0 6px;">'
         f'{escape(job.company or "Unknown")}{since}</div>'
