@@ -272,6 +272,17 @@ def _esc(s) -> str:
     return html.escape(str(s)) if s is not None else ""
 
 
+def _safe_href(url: str | None) -> str:
+    """Validate a URL is safe to use as an href attribute.
+    Returns the escaped URL if it starts with http:// or https://,
+    or an empty string (rendering as plain text) for any other scheme
+    (javascript:, data:, file:, etc.) to prevent XSS via scraper-controlled URLs.
+    """
+    if url and (url.startswith("http://") or url.startswith("https://")):
+        return html.escape(url)
+    return ""
+
+
 def _commute(j) -> str:
     if j.is_remote:
         return "Remote"
@@ -423,7 +434,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'<div{id_attr}{data} style="background:{PAPER_RAISED};border:1px solid {GRID};'
         f'padding:16px 18px;margin-bottom:14px;font-family:{FONT_SANS};">'
         f'<div style="font-size:16px;font-weight:700;color:{BLUEPRINT};line-height:1.35;">'
-        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT};text-decoration:none;">{title}</a>'
+        f'<a href="{_safe_href(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT};text-decoration:none;">{title}</a>'
         f'{star}{new}{stage}</div>'
         f'<div style="color:{MUTED};font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
