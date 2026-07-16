@@ -77,6 +77,10 @@ scoring:
     - "civic_innovation"
   target_firms: []            # company names that earn a bonus
   target_firm_bonus: 0.10
+  # Mission/values signal only (equity-minded, community-centered,
+  # ecologically/culturally sensitive practice) — LLM-judged, see
+  # enrichment.py's has_values_alignment.
+  values_alignment_bonus: 0.10
   skills_bonus:
     terms:
       - "power bi"
@@ -98,6 +102,9 @@ scoring:
       stretch:     0.85           # plausible with a good pitch — mild dock
       reach:       0.5            # needs years/credentials they lack — heavy dock, stays visible
       wrong_field: 0.15           # different profession entirely — near-kill, stays visible
+    # Rigid/hierarchical org structure (LLM-judged — see enrichment.py's
+    # is_hierarchical). Only docks when confirmed true.
+    is_hierarchical: 0.85
 
 # ── Hard disqualifiers (force score to 0) ────────────────────────────────────
 # Role-type red flags above are soft penalties, not kills. Out-of-metro AND
@@ -157,6 +164,14 @@ dedup:
 jobspy:
   results_wanted: 30
   hours_old: 168   # 7 days
+  # Keywords are batched into multiple OR-queries of this size so every
+  # keyword in search_queries.keywords actually gets searched, not just the
+  # first N. More batches = more requests per run.
+  keywords_per_query: 6
+  # Optional second pass per source using JobSpy's is_remote flag, to catch
+  # remote-tagged postings the location+distance search above would miss.
+  # Doubles request volume per source — off by default.
+  include_remote_pass: false
 
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:

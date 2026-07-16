@@ -67,6 +67,10 @@ class Job:
     is_admin_heavy: bool | None = None
     is_drafting_only: bool | None = None
     is_hierarchical: bool | None = None
+    # Mission/values signal only (equity-minded, community-centered,
+    # ecologically/culturally sensitive practice) — distinct from
+    # has_design_autonomy, which already covers studio-size/creative-latitude.
+    has_values_alignment: bool | None = None
     skills_leverage: list[str] = field(default_factory=list)
     autonomy_evidence: str | None = None
     fit_summary: str | None = None

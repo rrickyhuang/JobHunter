@@ -24,7 +24,7 @@ _JSON_FIELDS = {"skills_leverage", "score_breakdown",
 _DATETIME_FIELDS = {"posted_at", "scraped_at", "first_seen_at", "stage_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
-    "is_admin_heavy", "is_drafting_only", "is_hierarchical",
+    "is_admin_heavy", "is_drafting_only", "is_hierarchical", "has_values_alignment",
     "enriched", "is_new", "seen", "saved", "dismissed",
 }
 
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     is_admin_heavy      INTEGER,
     is_drafting_only    INTEGER,
     is_hierarchical     INTEGER,
+    has_values_alignment INTEGER,
     skills_leverage     TEXT,
     autonomy_evidence   TEXT,
     fit_summary         TEXT,
@@ -151,6 +152,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "notes": "TEXT NOT NULL DEFAULT ''",
         "company_research": "TEXT",
         "first_seen_at": "TEXT",
+        "has_values_alignment": "INTEGER",
     }
     stage_is_new = "stage" not in existing
     first_seen_is_new = "first_seen_at" not in existing

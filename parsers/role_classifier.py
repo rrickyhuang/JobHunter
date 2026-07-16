@@ -55,6 +55,15 @@ ROLE_SIGNALS: dict[str, list[str]] = {
         "facilities planning", "distribution center design",
         "corporate real estate design", "warehouse design",
     ],
+    # ── Service / CX design — designing the customer/experience journey
+    # itself (tech, finance, etc.), distinct from ops_design (designing a
+    # physical operations space) and design_adjacent's "design ops" (internal
+    # tooling/process for a design team) ──
+    "service_design": [
+        "service design", "service designer", "experience designer",
+        "customer experience design", "cx designer", "cx design",
+        "design consultant", "design consulting",
+    ],
     # ── Design-adjacent (moving toward a design direction) ──
     "design_adjacent": [
         "design coordinator", "design assistant", "studio assistant",

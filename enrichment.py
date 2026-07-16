@@ -1,8 +1,8 @@
 """LLM enrichment via Claude Haiku.
 
 One call per job returns two things:
-  1. FIT signals (design autonomy, mixed role, variety, admin/drafting flags,
-     refined role/org guesses) — these feed the score.
+  1. FIT signals (design autonomy, mixed role, variety, admin/drafting/hierarchy
+     flags, values alignment, refined role/org guesses) — these feed the score.
   2. QUALIFICATION assessment (seniority, required years/credentials, a verdict,
      and missing requirements) — display-only; it never changes the score.
 
@@ -69,6 +69,14 @@ If it IS in the candidate's field, map the posting's seniority to a verdict for 
     admin/production work a senior designer wouldn't take)  -> "overqualified"
 Roles hard-requiring registration (RPP/MCIP, BCSLA) the candidate lacks: keep the verdict but add the credential to missing_requirements (do NOT auto-fail).
 
+=== VALUES-ALIGNMENT SIGNAL ===
+`has_values_alignment` is specifically about MISSION/VALUES: does the posting signal
+equity-minded, community-centered, or ecologically/culturally sensitive practice?
+This is NOT about studio size or creative latitude — that's already covered by
+`has_design_autonomy`. Judge this from substantive signals (stated focus areas,
+project types, community/equity language tied to actual practice), not generic
+corporate-culture buzzwords ("fast-paced", "collaborative", "we're like a family").
+
 === JOB POSTING ===
 Title: {job.title}
 Company: {job.company}
@@ -84,6 +92,7 @@ Description:
   "is_admin_heavy": true/false/null,
   "is_drafting_only": true/false/null,
   "is_hierarchical": true/false/null,
+  "has_values_alignment": true/false/null,
   "skills_leverage": ["which of the candidate's skills the role uses"],
   "role_type_guess": "one of: {ROLE_TYPES} (ops_design = in-house design/space-planning role at a logistics, retail, or manufacturing company rather than a design studio)",
   "employment_type_guess": "one of: {EMPLOYMENT_TYPES} (unknown if the posting genuinely doesn't say — don't assume full_time just because it's not stated)",
@@ -113,7 +122,8 @@ def _coerce(data: dict) -> dict:
     """Validate/normalize the model output so bad values don't poison the DB."""
     out: dict = {}
     for k in ("has_design_autonomy", "has_mixed_role", "has_variety",
-              "is_admin_heavy", "is_drafting_only", "is_hierarchical"):
+              "is_admin_heavy", "is_drafting_only", "is_hierarchical",
+              "has_values_alignment"):
         v = data.get(k)
         out[k] = v if v in (True, False, None) else None
     out["skills_leverage"] = [str(s) for s in data.get("skills_leverage", []) if s][:10]

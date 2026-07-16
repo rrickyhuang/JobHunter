@@ -103,6 +103,14 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     if hits:
         bonus += min(hits * skills.get("per_hit", 0.02), skills.get("cap", 0.08))
 
+    # Mission/values signal (LLM-judged — see enrichment.py). Kept as a bonus,
+    # not a leading weighted axis, since it's inferred from posting tone/framing
+    # rather than a stated fact like commute or salary.
+    if job.has_values_alignment:
+        values_bonus = sc.get("values_alignment_bonus", 0.10)
+        bonus += values_bonus
+        breakdown["_values_bonus"] = values_bonus
+
     breakdown["_base"] = round(raw, 4)
     breakdown["_bonus"] = round(bonus, 4)
     total = min(raw + bonus, 1.0)
@@ -134,6 +142,14 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
         mult = sc.get("penalties", {}).get("non_full_time", 0.5)
         total *= mult
         breakdown["_employment_penalty"] = mult
+
+    # Soft penalty for rigid/hierarchical org structure (LLM-judged — see
+    # enrichment.py). Only docks on a confirmed-true signal; absence (False or
+    # unknown) earns no credit, since this is an inference, not a stated fact.
+    if job.is_hierarchical:
+        mult = sc.get("penalties", {}).get("is_hierarchical", 0.85)
+        total *= mult
+        breakdown["_hierarchical_penalty"] = mult
 
     # Soft seniority/experience penalty: a "reach" director/senior role Ricky
     # can't get shouldn't outrank an entry-level role he can. The base model
